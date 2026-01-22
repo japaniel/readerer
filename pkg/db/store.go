@@ -26,7 +26,7 @@ func CreateOrGetWord(db *sql.DB, word, lemma, language string) (int64, error) {
 	const maxRetries = 3
 
 	var id int64
-	for attempt := 0; attempt <= maxRetries; attempt++ {
+	for attempt := 0; attempt < maxRetries; attempt++ {
 		// Try to find existing word
 		err := db.QueryRow(`SELECT id FROM words WHERE word = ? AND IFNULL(lemma, '') = ? AND IFNULL(language, '') = ?`, word, lemma, language).Scan(&id)
 		if err == nil {
@@ -108,15 +108,8 @@ func CreateOrGetSource(db *sql.DB, sourceType, title, author, website, url, meta
 		return id, nil
 	}
 
-	// Final attempt to fetch the source after retries.
-	err := db.QueryRow(
-		`SELECT id FROM sources WHERE IFNULL(url, '') = ? AND IFNULL(title, '') = ? AND IFNULL(author, '') = ?`,
-		url, title, author,
-	).Scan(&id)
-	if err != nil {
-		return 0, err
-	}
-	return id, nil
+	// If we've exhausted all retries, return an error
+	return 0, fmt.Errorf("could not create or get source after %d retries", maxRetries)
 }
 
 // LinkWordToSource links the word and source, creating or updating an entry in word_sources.
