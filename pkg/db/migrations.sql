@@ -24,6 +24,9 @@ CREATE TABLE IF NOT EXISTS sources (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_sources_unique ON sources(url, title, author);
 
+-- index to support lookups by url/title/author
+CREATE INDEX IF NOT EXISTS idx_sources_lookup ON sources(url, title, author);
+
 CREATE TABLE IF NOT EXISTS word_sources (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     word_id INTEGER NOT NULL REFERENCES words(id) ON DELETE CASCADE,

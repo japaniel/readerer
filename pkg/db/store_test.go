@@ -170,3 +170,48 @@ func TestCreateOrGetSourceConcurrency(t *testing.T) {
 		t.Fatalf("expected 1 source row, got %d", cnt)
 	}
 }
+
+func TestCreateOrGetWordEmpty(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	_, err := CreateOrGetWord(db, "  ", "", "ja")
+	if err == nil {
+		t.Fatalf("expected error for empty word")
+	}
+}
+
+func TestGetWordsBySourceNullCols(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	wID, err := CreateOrGetWord(db, "魚", "魚", "ja")
+	if err != nil { t.Fatalf("create word: %v", err) }
+	sID, err := CreateOrGetSource(db, "website_article", "", "", "example.com", "https://example.com/d", "")
+	if err != nil { t.Fatalf("create source: %v", err) }
+	if err := LinkWordToSource(db, wID, sID, "その魚は速い。", "その魚は速い。"); err != nil {
+		t.Fatalf("link: %v", err)
+	}
+	words, err := GetWordsBySource(db, sID)
+	if err != nil { t.Fatalf("query: %v", err) }
+	if len(words) != 1 { t.Fatalf("expected 1 word, got %d", len(words)) }
+	if words[0].Pronunciation != "" { t.Fatalf("expected empty pronunciation, got %s", words[0].Pronunciation) }
+	if words[0].ImageURL != "" { t.Fatalf("expected empty image url, got %s", words[0].ImageURL) }
+}
+
+func TestLinkUpdatesContext(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	wID, err := CreateOrGetWord(db, "鳥", "鳥", "ja")
+	if err != nil { t.Fatalf("create word: %v", err) }
+	sID, err := CreateOrGetSource(db, "website_article", "", "", "example.com", "https://example.com/e", "")
+	if err != nil { t.Fatalf("create source: %v", err) }
+	if err := LinkWordToSource(db, wID, sID, "最初の文。", "最初の文。"); err != nil {
+		t.Fatalf("link: %v", err)
+	}
+	if err := LinkWordToSource(db, wID, sID, "更新された文。", "更新された文。"); err != nil {
+		t.Fatalf("link update: %v", err)
+	}
+	var ctx, ex string
+	err = db.QueryRow(`SELECT context_sentence, example_sentence FROM word_sources WHERE word_id = ? AND source_id = ?`, wID, sID).Scan(&ctx, &ex)
+	if err != nil { t.Fatalf("query: %v", err) }
+	if ctx != "更新された文。" || ex != "更新された文。" { t.Fatalf("expected updated context/example, got %s / %s", ctx, ex) }
+}

@@ -2,22 +2,19 @@ package db
 
 import (
 	"database/sql"
-	"strings"
 
 	_ "github.com/mattn/go-sqlite3"
 )
 
 // InitDB runs migrations on the given DB connection using the embedded SQL.
+// We execute the full SQL batch so that statement parsing is delegated to SQLite
+// (safer than naive semicolon-splitting which can break on semicolons inside
+// strings or comments).
+//
+// For more complex migration needs (versioning, rollbacks), consider using a
+// migration library (e.g., golang-migrate) in the future. For the current
+// scope the embedded SQL is sufficient and simplified for tests.
 func InitDB(db *sql.DB) error {
-	stmts := strings.Split(migrationsSQL, ";")
-	for _, s := range stmts {
-		s = strings.TrimSpace(s)
-		if s == "" {
-			continue
-		}
-		if _, err := db.Exec(s); err != nil {
-			return err
-		}
-	}
-	return nil
+	_, err := db.Exec(migrationsSQL)
+	return err
 }

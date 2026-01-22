@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -17,6 +18,10 @@ func isUniqueConstraintErr(err error) bool {
 
 // CreateOrGetWord returns existing word id or inserts a new word and returns its id.
 func CreateOrGetWord(db *sql.DB, word, lemma, language string) (int64, error) {
+	word = strings.TrimSpace(word)
+	if word == "" {
+		return 0, fmt.Errorf("word must be non-empty")
+	}
 	var id int64
 	err := db.QueryRow(`SELECT id FROM words WHERE word = ? AND IFNULL(lemma, '') = ? AND IFNULL(language, '') = ?`, word, lemma, language).Scan(&id)
 	if err == nil {
@@ -98,6 +103,9 @@ func GetWordsBySource(db *sql.DB, sourceID int64) ([]Word, error) {
 			w.MnemonicText = mn.String
 		}
 		out = append(out, w)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return out, nil
 }
