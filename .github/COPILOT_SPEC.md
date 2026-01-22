@@ -1,4 +1,4 @@
----
+sin---
 name: Japanese Reader → Anki
 version: 0.1
 language: Go
@@ -83,7 +83,7 @@ Flow: Ingest → Analyze → Candidate List → Review → Card Generation → A
 - **Build & Distribution:** `go mod` for dependency management; single static binary for distribution; GitHub Actions for cross-compilation and releases.
 - **Tokenization & Morphology:** Prefer MeCab via Go bindings (e.g., `shogo82148/go-mecab`) or call external analyzers (MeCab/Sudachi) as subprocesses to preserve offline support.
 - **Dictionaries:** JMdict/KANJIDIC parsed into a local SQLite database or accessed via efficient Go parsers.
-- **Database:** SQLite using `modernc.org/sqlite` (CGO-free) or `mattn/go-sqlite3` (CGO) depending on distribution requirements.
+- **Database:** SQLite using `github.com/mattn/go-sqlite3` (CGO) for initial development; consider `modernc.org/sqlite` (CGO-free) later for distribution-focused builds.
 - **Anki Integration:** AnkiConnect (HTTP) for push; `.apkg` export via an implemented Go exporter or by invoking `genanki` as an external tool.
 - **CI & Quality:** GitHub Actions with `golangci-lint`, `go test`, and `go vet` for static analysis and testing.
 
@@ -174,6 +174,34 @@ Note: AnkiWeb has no public write API; pushing to AnkiWeb requires syncing from 
 2. App extracts text and tokenizes; shows candidate unknown words.
 3. User filters and accepts 12 nouns.
 4. App creates cards in `Japanese:NewWords` deck via AnkiConnect; user syncs to AnkiWeb.
+
+## Project SPEC decisions
+- Q1 — Initial interface for MVP: **minimal web UI**
+- Q2 — Ingestion input types: **URL / website only (initial)**
+- Q3 — Review platform for MVP: **Use AnkiWeb (external) for reviews initially; implement in-app SRS later**
+
+Notes: Exports to Anki should include provable attribution (source site, URL or title/author), example sentence, and media (image/audio) when available.
+
+- Q6 — SQLite driver
+  - **Question:** Which SQLite driver should we use for initial development and CI?  
+  - **Answer:** **github.com/mattn/go-sqlite3** (CGO).  
+  - **Note:** We may add `modernc.org/sqlite` (CGO-free) later for cross-compilation and distribution convenience.
+
+---
+
+### Q4 — SRS algorithm
+- **Question:** Should SRS use **SM-2** by default? (Answer: **Yes** / **No** / **Custom**)  
+- **Answer:** **Deferred** — decide when implementing the in-app SRS feature.
+
+Notes: Reviews are handled via AnkiWeb for the MVP; in-app SRS will be implemented later, but selecting a default algorithm now helps shape data fields and exports.
+
+---
+
+### Q5 — Web UI rendering
+- **Question:** Should the initial web UI be a **single-page app (SPA)** or **server-rendered**?  
+- **Answer:** **single-page app (SPA)**
+
+Notes: Use SPA initially for faster iteration and a richer interactive experience; evaluate server-rendering or progressive enhancement later if SEO or initial load performance becomes a priority.
 
 ---
 
