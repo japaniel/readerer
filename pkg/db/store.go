@@ -2,8 +2,18 @@ package db
 
 import (
 	"database/sql"
+	"strings"
 	"time"
 )
+
+// isUniqueConstraintErr returns true when the error indicates a unique/constraint violation
+func isUniqueConstraintErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "unique") || strings.Contains(s, "constraint failed")
+}
 
 // CreateOrGetWord returns existing word id or inserts a new word and returns its id.
 func CreateOrGetWord(db *sql.DB, word, lemma, language string) (int64, error) {
@@ -13,16 +23,17 @@ func CreateOrGetWord(db *sql.DB, word, lemma, language string) (int64, error) {
 		return id, nil
 	}
 	if err != sql.ErrNoRows {
-		// insert
-		res, err := db.Exec(`INSERT INTO words (word, lemma, language) VALUES (?, ?, ?)`, word, lemma, language)
-		if err != nil {
-			return 0, err
-		}
-		return res.LastInsertId()
+		// real DB error
+		return 0, err
 	}
-	// Not found path: insert
+
+	// Not found -> try to insert. If a race occurs (unique constraint), attempt to select again.
 	res, err := db.Exec(`INSERT INTO words (word, lemma, language) VALUES (?, ?, ?)`, word, lemma, language)
 	if err != nil {
+		if isUniqueConstraintErr(err) {
+			// someone else inserted concurrently, try to select again
+			return CreateOrGetWord(db, word, lemma, language)
+		}
 		return 0, err
 	}
 	return res.LastInsertId()
@@ -35,25 +46,31 @@ func CreateOrGetSource(db *sql.DB, sourceType, title, author, website, url, meta
 	if err == nil {
 		return id, nil
 	}
-	res, err := db.Exec(`INSERT INTO sources (source_type, title, author, website, url, meta) VALUES (?, ?, ?, ?, ?, ?)`, sourceType, title, author, website, url, meta)
+	if err != sql.ErrNoRows {
+		return 0, err
+	}
+	// Use INSERT OR IGNORE to avoid duplicate rows under concurrency, then select the id.
+	_, err = db.Exec(`INSERT OR IGNORE INTO sources (source_type, title, author, website, url, meta) VALUES (?, ?, ?, ?, ?, ?)`, sourceType, title, author, website, url, meta)
 	if err != nil {
 		return 0, err
 	}
-	return res.LastInsertId()
+	// Now the row should exist (either inserted or pre-existing). Select it.
+	err = db.QueryRow(`SELECT id FROM sources WHERE IFNULL(url, '') = ? AND IFNULL(title, '') = ? AND IFNULL(author, '') = ?`, url, title, author).Scan(&id)
+	if err != nil {
+		return 0, err
+	}
+	return id, nil
 }
 
 // LinkWordToSource links the word and source, creating or updating an entry in word_sources.
 func LinkWordToSource(db *sql.DB, wordID, sourceID int64, context, example string) error {
-	// try update
-	res, err := db.Exec(`UPDATE word_sources SET occurrence_count = occurrence_count + 1 WHERE word_id = ? AND source_id = ?`, wordID, sourceID)
-	if err != nil {
-		return err
-	}
-	n, _ := res.RowsAffected()
-	if n > 0 {
-		return nil
-	}
-	_, err = db.Exec(`INSERT INTO word_sources (word_id, source_id, context_sentence, example_sentence, occurrence_count, first_seen_at) VALUES (?, ?, ?, ?, 1, ?)`, wordID, sourceID, context, example, time.Now())
+	// Use SQLite UPSERT to atomically insert or update occurrence_count and context/example
+	_, err := db.Exec(`INSERT INTO word_sources (word_id, source_id, context_sentence, example_sentence, occurrence_count, first_seen_at)
+	VALUES (?, ?, ?, ?, 1, ?)
+	ON CONFLICT(word_id, source_id) DO UPDATE SET
+	  occurrence_count = word_sources.occurrence_count + 1,
+	  context_sentence = excluded.context_sentence,
+	  example_sentence = excluded.example_sentence`, wordID, sourceID, context, example, time.Now())
 	return err
 }
 
