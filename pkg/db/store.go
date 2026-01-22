@@ -18,8 +18,8 @@ func isUniqueConstraintErr(err error) bool {
 
 // CreateOrGetWord returns existing word id or inserts a new word and returns its id.
 func CreateOrGetWord(db *sql.DB, word, lemma, language string) (int64, error) {
-	word = strings.TrimSpace(word)
-	if word == "" {
+	trimmedWord := strings.TrimSpace(word)
+	if trimmedWord == "" {
 		return 0, fmt.Errorf("word must be non-empty")
 	}
 
@@ -28,7 +28,7 @@ func CreateOrGetWord(db *sql.DB, word, lemma, language string) (int64, error) {
 	var id int64
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		// Try to find existing word
-		err := db.QueryRow(`SELECT id FROM words WHERE word = ? AND IFNULL(lemma, '') = ? AND IFNULL(language, '') = ?`, word, lemma, language).Scan(&id)
+		err := db.QueryRow(`SELECT id FROM words WHERE word = ? AND IFNULL(lemma, '') = ? AND IFNULL(language, '') = ?`, trimmedWord, lemma, language).Scan(&id)
 		if err == nil {
 			return id, nil
 		}
@@ -38,7 +38,7 @@ func CreateOrGetWord(db *sql.DB, word, lemma, language string) (int64, error) {
 		}
 
 		// Not found -> try to insert
-		res, err := db.Exec(`INSERT INTO words (word, lemma, language) VALUES (?, ?, ?)`, word, lemma, language)
+		res, err := db.Exec(`INSERT INTO words (word, lemma, language) VALUES (?, ?, ?)`, trimmedWord, lemma, language)
 		if err != nil {
 			if isUniqueConstraintErr(err) {
 				// someone else inserted concurrently, retry
@@ -55,8 +55,8 @@ func CreateOrGetWord(db *sql.DB, word, lemma, language string) (int64, error) {
 
 // CreateOrGetSource returns existing source id or inserts a new source and returns its id.
 func CreateOrGetSource(db *sql.DB, sourceType, title, author, website, url, meta string) (int64, error) {
-	sourceType = strings.TrimSpace(sourceType)
-	if sourceType == "" {
+	trimmedSourceType := strings.TrimSpace(sourceType)
+	if trimmedSourceType == "" {
 		return 0, fmt.Errorf("sourceType must be non-empty")
 	}
 
@@ -77,9 +77,9 @@ func CreateOrGetSource(db *sql.DB, sourceType, title, author, website, url, meta
 		}
 
 		// No existing row; try to insert one.
-		_, err = db.Exec(
+		res, err := db.Exec(
 			`INSERT INTO sources (source_type, title, author, website, url, meta) VALUES (?, ?, ?, ?, ?, ?)`,
-			sourceType, title, author, website, url, meta,
+			trimmedSourceType, title, author, website, url, meta,
 		)
 		if err != nil {
 			// If another concurrent transaction inserted the same source, retry the SELECT.
@@ -89,19 +89,8 @@ func CreateOrGetSource(db *sql.DB, sourceType, title, author, website, url, meta
 			return 0, err
 		}
 
-		// Insert succeeded; fetch and return the id.
-		err = db.QueryRow(
-			`SELECT id FROM sources WHERE IFNULL(url, '') = ? AND IFNULL(title, '') = ? AND IFNULL(author, '') = ?`,
-			url, title, author,
-		).Scan(&id)
-		if err != nil {
-			if err == sql.ErrNoRows {
-				// Unexpected, but allow the loop to retry.
-				continue
-			}
-			return 0, err
-		}
-		return id, nil
+		// Insert succeeded; return the id directly
+		return res.LastInsertId()
 	}
 
 	// If we've exhausted all retries, return an error
