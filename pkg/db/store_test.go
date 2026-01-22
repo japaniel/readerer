@@ -13,6 +13,9 @@ func setupTestDB(t *testing.T) *sql.DB {
 		t.Fatalf("open db: %v", err)
 	}
 	// Ensure single connection to avoid separate in-memory DBs per connection.
+	// NOTE: This serializes all DB operations through a single connection, which means
+	// concurrency tests below don't test true parallel execution, but rather the
+	// correctness of the logic under simulated concurrent access patterns.
 	db.SetMaxOpenConns(1)
 	if err := InitDB(db); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -233,5 +236,37 @@ func TestLinkUpdatesContext(t *testing.T) {
 	}
 	if ctx != "更新された文。" || ex != "更新された文。" {
 		t.Fatalf("expected updated context/example, got %s / %s", ctx, ex)
+	}
+}
+
+func TestCreateOrGetSourceEmpty(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	_, err := CreateOrGetSource(db, "  ", "", "", "", "", "")
+	if err == nil {
+		t.Fatalf("expected error for empty sourceType")
+	}
+}
+
+func TestLinkWordToSourceInvalidIDs(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	// Test with invalid wordID
+	err := LinkWordToSource(db, 0, 1, "context", "example")
+	if err == nil {
+		t.Fatalf("expected error for wordID <= 0")
+	}
+
+	// Test with invalid sourceID
+	err = LinkWordToSource(db, 1, 0, "context", "example")
+	if err == nil {
+		t.Fatalf("expected error for sourceID <= 0")
+	}
+
+	// Test with negative wordID
+	err = LinkWordToSource(db, -1, 1, "context", "example")
+	if err == nil {
+		t.Fatalf("expected error for negative wordID")
 	}
 }

@@ -15,6 +15,10 @@ import (
 // migration library (e.g., golang-migrate) in the future. For the current
 // scope the embedded SQL is sufficient and simplified for tests.
 func InitDB(db *sql.DB) error {
+	// Ensure SQLite enforces foreign key constraints on this connection.
+	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
+		return err
+	}
 	_, err := db.Exec(migrationsSQL)
 	return err
 }
