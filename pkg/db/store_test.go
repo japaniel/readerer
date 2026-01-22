@@ -73,8 +73,12 @@ func TestLinkAndQuery(t *testing.T) {
 	// verify occurrence_count
 	var cnt int
 	err = db.QueryRow(`SELECT occurrence_count FROM word_sources WHERE word_id = ? AND source_id = ?`, wID, sID).Scan(&cnt)
-	if err != nil { t.Fatalf("query count: %v", err) }
-	if cnt != 2 { t.Fatalf("expected occurrence_count=2, got %d", cnt) }
+	if err != nil {
+		t.Fatalf("query count: %v", err)
+	}
+	if cnt != 2 {
+		t.Fatalf("expected occurrence_count=2, got %d", cnt)
+	}
 
 	words, err := GetWordsBySource(db, sID)
 	if err != nil {
@@ -110,7 +114,9 @@ func TestCreateOrGetWordConcurrency(t *testing.T) {
 		if id == 0 {
 			t.Fatalf("error in goroutine")
 		}
-		if i == 0 { first = id }
+		if i == 0 {
+			first = id
+		}
 		if id != first {
 			t.Fatalf("expected same id, got %d and %d", first, id)
 		}
@@ -118,8 +124,12 @@ func TestCreateOrGetWordConcurrency(t *testing.T) {
 	// ensure only one row exists
 	var cnt int
 	err := db.QueryRow(`SELECT COUNT(*) FROM words WHERE word = ? AND lemma = ?`, "犬", "犬").Scan(&cnt)
-	if err != nil { t.Fatalf("count: %v", err) }
-	if cnt != 1 { t.Fatalf("expected 1 word row, got %d", cnt) }
+	if err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if cnt != 1 {
+		t.Fatalf("expected 1 word row, got %d", cnt)
+	}
 }
 
 func TestCreateOrGetSourceConcurrency(t *testing.T) {
@@ -144,13 +154,19 @@ func TestCreateOrGetSourceConcurrency(t *testing.T) {
 		if id == 0 {
 			t.Fatalf("error in goroutine")
 		}
-		if i == 0 { first = id }
+		if i == 0 {
+			first = id
+		}
 		if id != first {
 			t.Fatalf("expected same id, got %d and %d", first, id)
 		}
 	}
 	var cnt int
 	err := db.QueryRow(`SELECT COUNT(*) FROM sources WHERE url = ?`, "https://example.com/c").Scan(&cnt)
-	if err != nil { t.Fatalf("count: %v", err) }
-	if cnt != 1 { t.Fatalf("expected 1 source row, got %d", cnt) }
+	if err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if cnt != 1 {
+		t.Fatalf("expected 1 source row, got %d", cnt)
+	}
 }
