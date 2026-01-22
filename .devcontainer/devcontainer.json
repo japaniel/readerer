@@ -4,7 +4,12 @@
     "dockerfile": "Dockerfile"
   },
   "remoteUser": "vscode",
-  "postCreateCommand": "go version || true",
+  "postCreateCommand": "go version || true && mkdir -p /workspace/.gopath/{bin,pkg/mod/cache/download} && chown -R $(id -u):$(id -g) /workspace/.gopath",
+  "containerEnv": {
+    "GOPATH": "/workspace/.gopath",
+    "GOMODCACHE": "/workspace/.gopath/pkg/mod",
+    "GOPROXY": "https://proxy.golang.org,direct"
+  },
   "settings": {
     "go.toolsEnvVars": {
       "GOBIN": "/go/bin"
