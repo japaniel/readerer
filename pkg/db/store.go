@@ -42,19 +42,15 @@ func CreateOrGetWord(db *sql.DB, word, lemma, language string) (int64, error) {
 		if err != nil {
 			if isUniqueConstraintErr(err) {
 				// someone else inserted concurrently, retry
-				if attempt < maxRetries {
-					continue
-				}
-				// If we've exhausted retries, return error
-				return 0, fmt.Errorf("could not create or get word after %d retries due to repeated unique constraint errors", maxRetries)
+				continue
 			}
 			return 0, err
 		}
 		return res.LastInsertId()
 	}
 
-	// This should be unreachable, but just in case
-	return 0, fmt.Errorf("could not create or get word after %d retries", maxRetries)
+	// If we've exhausted all retries due to repeated unique constraint errors
+	return 0, fmt.Errorf("could not create or get word after %d retries due to repeated unique constraint errors", maxRetries)
 }
 
 // CreateOrGetSource returns existing source id or inserts a new source and returns its id.
