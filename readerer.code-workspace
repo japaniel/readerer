@@ -4,5 +4,10 @@
 			"path": "."
 		}
 	],
-	"settings": {}
+	"settings": {
+		"chat.tools.terminal.autoApprove": {
+			"git push": true,
+			"true": true
+		}
+	}
 }
