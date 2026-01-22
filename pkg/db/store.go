@@ -42,7 +42,17 @@ func CreateOrGetWord(db *sql.DB, word, lemma, language string) (int64, error) {
 // CreateOrGetSource returns existing source id or inserts a new source and returns its id.
 func CreateOrGetSource(db *sql.DB, sourceType, title, author, website, url, meta string) (int64, error) {
 	var id int64
-	err := db.QueryRow(`SELECT id FROM sources WHERE IFNULL(url, '') = ? AND IFNULL(title, '') = ? AND IFNULL(author, '') = ?`, url, title, author).Scan(&id)
+	// Use NULL-safe comparison to match unique constraint behavior.
+	// The pattern (col = val OR (col IS NULL AND val = '')) ensures:
+	// - When val is non-empty: matches col = val (exact match)
+	// - When val is empty: matches both col = '' and col IS NULL
+	// This treats empty strings and NULLs as equivalent in lookup,
+	// while INSERT uses NULLIF to normalize empty strings to NULL.
+	query := `SELECT id FROM sources WHERE 
+		(url = ? OR (url IS NULL AND ? = '')) AND 
+		(title = ? OR (title IS NULL AND ? = '')) AND 
+		(author = ? OR (author IS NULL AND ? = ''))`
+	err := db.QueryRow(query, url, url, title, title, author, author).Scan(&id)
 	if err == nil {
 		return id, nil
 	}
@@ -50,12 +60,15 @@ func CreateOrGetSource(db *sql.DB, sourceType, title, author, website, url, meta
 		return 0, err
 	}
 	// Use INSERT OR IGNORE to avoid duplicate rows under concurrency, then select the id.
-	_, err = db.Exec(`INSERT OR IGNORE INTO sources (source_type, title, author, website, url, meta) VALUES (?, ?, ?, ?, ?, ?)`, sourceType, title, author, website, url, meta)
+	// NULLIF converts empty strings to NULL, ensuring consistent storage.
+	_, err = db.Exec(`INSERT OR IGNORE INTO sources (source_type, title, author, website, url, meta) 
+		VALUES (?, NULLIF(?, ''), NULLIF(?, ''), ?, NULLIF(?, ''), NULLIF(?, ''))`, 
+		sourceType, title, author, website, url, meta)
 	if err != nil {
 		return 0, err
 	}
 	// Now the row should exist (either inserted or pre-existing). Select it.
-	err = db.QueryRow(`SELECT id FROM sources WHERE IFNULL(url, '') = ? AND IFNULL(title, '') = ? AND IFNULL(author, '') = ?`, url, title, author).Scan(&id)
+	err = db.QueryRow(query, url, url, title, title, author, author).Scan(&id)
 	if err != nil {
 		return 0, err
 	}

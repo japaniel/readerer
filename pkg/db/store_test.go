@@ -170,3 +170,55 @@ func TestCreateOrGetSourceConcurrency(t *testing.T) {
 		t.Fatalf("expected 1 source row, got %d", cnt)
 	}
 }
+
+func TestCreateOrGetSourceNullHandling(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	// Test 1: Insert with empty strings (will be converted to NULL)
+	id1, err := CreateOrGetSource(db, "website_article", "", "", "example.com", "https://example.com/null-test", "")
+	if err != nil {
+		t.Fatalf("create source with empty strings: %v", err)
+	}
+
+	// Test 2: Query with empty strings should find the same row
+	id2, err := CreateOrGetSource(db, "website_article", "", "", "example.com", "https://example.com/null-test", "")
+	if err != nil {
+		t.Fatalf("get source with empty strings: %v", err)
+	}
+	if id1 != id2 {
+		t.Fatalf("expected same id for empty strings, got %d and %d", id1, id2)
+	}
+
+	// Test 3: Verify that NULLs were stored (not empty strings)
+	var title, author sql.NullString
+	err = db.QueryRow(`SELECT title, author FROM sources WHERE id = ?`, id1).Scan(&title, &author)
+	if err != nil {
+		t.Fatalf("query stored values: %v", err)
+	}
+	if title.Valid {
+		t.Fatalf("expected title to be NULL, got %q", title.String)
+	}
+	if author.Valid {
+		t.Fatalf("expected author to be NULL, got %q", author.String)
+	}
+
+	// Test 4: Multiple sources with NULL values should be distinct if other fields differ
+	id3, err := CreateOrGetSource(db, "website_article", "", "", "example.com", "https://example.com/null-test-2", "")
+	if err != nil {
+		t.Fatalf("create second source with NULLs: %v", err)
+	}
+	if id3 == id1 {
+		t.Fatalf("expected different ids for different URLs, got same id %d", id3)
+	}
+
+	// Test 5: Verify only appropriate rows exist
+	var cnt int
+	err = db.QueryRow(`SELECT COUNT(*) FROM sources WHERE (title IS NULL OR title = '') AND (author IS NULL OR author = '')`).Scan(&cnt)
+	if err != nil {
+		t.Fatalf("count sources: %v", err)
+	}
+	if cnt != 2 {
+		t.Fatalf("expected 2 source rows with NULL title/author, got %d", cnt)
+	}
+}
