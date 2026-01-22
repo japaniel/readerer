@@ -1,0 +1,34 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "go: build",
+      "type": "shell",
+      "command": "go build ./...",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "reveal": "always"
+      }
+    },
+    {
+      "label": "go: test",
+      "type": "shell",
+      "command": "go test ./...",
+      "group": "test",
+      "presentation": {
+        "reveal": "always"
+      }
+    },
+    {
+      "label": "go: lint",
+      "type": "shell",
+      "command": "golangci-lint run ./...",
+      "presentation": {
+        "reveal": "always"
+      }
+    }
+  ]
+}

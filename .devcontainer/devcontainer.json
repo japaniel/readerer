@@ -1,0 +1,23 @@
+{
+  "name": "readerer Dev Container",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "remoteUser": "vscode",
+  "postCreateCommand": "go version || true",
+  "settings": {
+    "go.toolsEnvVars": {
+      "GOBIN": "/go/bin"
+    },
+    "go.useLanguageServer": true
+  },
+  "extensions": [
+    "golang.go",
+    "eamodio.gitlens",
+    "ms-vscode-remote.remote-containers"
+  ],
+  "mounts": [
+    "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached"
+  ],
+  "workspaceFolder": "/workspace"
+}
