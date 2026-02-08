@@ -3,6 +3,9 @@
   "build": {
     "dockerfile": "Dockerfile"
   },
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {}
+  },
   "remoteUser": "vscode",
   "postCreateCommand": "go version || true && mkdir -p /workspace/.gopath/{bin,pkg/mod/cache/download} && chown -R $(id -u):$(id -g) /workspace/.gopath",
   "containerEnv": {

@@ -136,7 +136,7 @@ func TestPipelineWithMainichi(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create analyzer: %v", err)
 	}
-	
+
 	tokens, err := analyzer.Analyze(article.TextContent)
 	if err != nil {
 		t.Fatalf("Analyze failed: %v", err)
@@ -148,4 +148,3 @@ func TestPipelineWithMainichi(t *testing.T) {
 
 	fmt.Printf("Successfully validated Mainichi pipeline with %d tokens\n", len(tokens))
 }
-
