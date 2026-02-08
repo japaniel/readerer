@@ -7,6 +7,13 @@ import (
 	"time"
 )
 
+// DBExecutor is an interface that allows methods to accept either *sql.DB or *sql.Tx
+type DBExecutor interface {
+	Exec(query string, args ...interface{}) (sql.Result, error)
+	Query(query string, args ...interface{}) (*sql.Rows, error)
+	QueryRow(query string, args ...interface{}) *sql.Row
+}
+
 // isUniqueConstraintErr returns true when the error indicates a unique/constraint violation
 func isUniqueConstraintErr(err error) bool {
 	if err == nil {
@@ -17,44 +24,30 @@ func isUniqueConstraintErr(err error) bool {
 }
 
 // CreateOrGetWord returns existing word id or inserts a new word and returns its id.
-func CreateOrGetWord(db *sql.DB, word, lemma, language string) (int64, error) {
+func CreateOrGetWord(db DBExecutor, word, lemma, reading, definitions, language string) (int64, error) {
 	trimmedWord := strings.TrimSpace(word)
 	if trimmedWord == "" {
 		return 0, fmt.Errorf("word must be non-empty")
 	}
 
-	const maxRetries = 3
-
 	var id int64
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		// Try to find existing word
-		err := db.QueryRow(`SELECT id FROM words WHERE word = ? AND IFNULL(lemma, '') = ? AND IFNULL(language, '') = ?`, trimmedWord, lemma, language).Scan(&id)
-		if err == nil {
-			return id, nil
-		}
-		if err != sql.ErrNoRows {
-			// real DB error
-			return 0, err
-		}
+	query := `INSERT INTO words (word, lemma, pronunciation, definitions, language) 
+			  VALUES (?, ?, ?, ?, ?)
+			  ON CONFLICT(word, lemma, language) 
+			  DO UPDATE SET 
+			    pronunciation = COALESCE(NULLIF(excluded.pronunciation, ''), words.pronunciation),
+				definitions = COALESCE(NULLIF(excluded.definitions, ''), words.definitions)
+			  RETURNING id`
 
-		// Not found -> try to insert
-		res, err := db.Exec(`INSERT INTO words (word, lemma, language) VALUES (?, ?, ?)`, trimmedWord, lemma, language)
-		if err != nil {
-			if isUniqueConstraintErr(err) {
-				// someone else inserted concurrently, retry
-				continue
-			}
-			return 0, err
-		}
-		return res.LastInsertId()
+	err := db.QueryRow(query, trimmedWord, lemma, reading, definitions, language).Scan(&id)
+	if err != nil {
+		return 0, fmt.Errorf("upsert word: %w", err)
 	}
-
-	// If we've exhausted all retries due to repeated unique constraint errors
-	return 0, fmt.Errorf("could not create or get word after %d retries due to repeated unique constraint errors", maxRetries)
+	return id, nil
 }
 
 // CreateOrGetSource returns existing source id or inserts a new source and returns its id.
-func CreateOrGetSource(db *sql.DB, sourceType, title, author, website, url, meta string) (int64, error) {
+func CreateOrGetSource(db DBExecutor, sourceType, title, author, website, url, meta string) (int64, error) {
 	trimmedSourceType := strings.TrimSpace(sourceType)
 	if trimmedSourceType == "" {
 		return 0, fmt.Errorf("sourceType must be non-empty")
@@ -98,7 +91,7 @@ func CreateOrGetSource(db *sql.DB, sourceType, title, author, website, url, meta
 }
 
 // LinkWordToSource links the word and source, creating or updating an entry in word_sources.
-func LinkWordToSource(db *sql.DB, wordID, sourceID int64, context, example string) error {
+func LinkWordToSource(db DBExecutor, wordID, sourceID int64, context, example string) error {
 	if wordID <= 0 {
 		return fmt.Errorf("wordID must be positive")
 	}
@@ -106,17 +99,35 @@ func LinkWordToSource(db *sql.DB, wordID, sourceID int64, context, example strin
 		return fmt.Errorf("sourceID must be positive")
 	}
 	// Use SQLite UPSERT to atomically insert or update occurrence_count and context/example
-	_, err := db.Exec(`INSERT INTO word_sources (word_id, source_id, context_sentence, example_sentence, occurrence_count, first_seen_at)
+	var wordSourceID int64
+	err := db.QueryRow(`INSERT INTO word_sources (word_id, source_id, context_sentence, example_sentence, occurrence_count, first_seen_at)
 	VALUES (?, ?, ?, ?, 1, ?)
 	ON CONFLICT(word_id, source_id) DO UPDATE SET
 	  occurrence_count = word_sources.occurrence_count + 1,
 	  context_sentence = excluded.context_sentence,
-	  example_sentence = excluded.example_sentence`, wordID, sourceID, context, example, time.Now())
-	return err
+	  example_sentence = excluded.example_sentence
+	RETURNING id`, wordID, sourceID, context, example, time.Now()).Scan(&wordSourceID)
+	if err != nil {
+		return err
+	}
+
+	// Limit stored contexts to 5 per word-source pair
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM word_contexts WHERE word_source_id = ?`, wordSourceID).Scan(&count); err != nil {
+		return err
+	}
+
+	if count < 5 {
+		_, err := db.Exec(`INSERT OR IGNORE INTO word_contexts (word_source_id, sentence) VALUES (?, ?)`, wordSourceID, context)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // UpdateWordDefinitions updates the definitions JSON for a given word.
-func UpdateWordDefinitions(db *sql.DB, wordID int64, definitions string) error {
+func UpdateWordDefinitions(db DBExecutor, wordID int64, definitions string) error {
 	if wordID <= 0 {
 		return fmt.Errorf("wordID must be positive")
 	}
@@ -125,7 +136,7 @@ func UpdateWordDefinitions(db *sql.DB, wordID int64, definitions string) error {
 }
 
 // GetWordsBySource returns words associated with a given source id.
-func GetWordsBySource(db *sql.DB, sourceID int64) ([]Word, error) {
+func GetWordsBySource(db DBExecutor, sourceID int64) ([]Word, error) {
 	rows, err := db.Query(`SELECT w.id, w.word, w.lemma, w.language, w.pronunciation, w.image_url, w.mnemonic_text, w.definitions FROM words w JOIN word_sources ws ON ws.word_id = w.id WHERE ws.source_id = ?`, sourceID)
 	if err != nil {
 		return nil, err
@@ -164,4 +175,20 @@ func GetWordsBySource(db *sql.DB, sourceID int64) ([]Word, error) {
 		return nil, err
 	}
 	return out, nil
+}
+
+// GetSourceProgress returns the last processed sentence index for a source.
+func GetSourceProgress(db DBExecutor, sourceID int64) (int, error) {
+var index int
+err := db.QueryRow("SELECT last_processed_sentence FROM sources WHERE id = ?", sourceID).Scan(&index)
+if err != nil {
+return 0, err
+}
+return index, nil
+}
+
+// UpdateSourceProgress updates the last processed sentence index.
+func UpdateSourceProgress(db DBExecutor, sourceID int64, index int) error {
+_, err := db.Exec("UPDATE sources SET last_processed_sentence = ? WHERE id = ?", index, sourceID)
+return err
 }

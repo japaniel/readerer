@@ -20,5 +20,13 @@ func InitDB(db *sql.DB) error {
 		return err
 	}
 	_, err := db.Exec(migrationsSQL)
-	return err
+	if err != nil {
+		return err
+	}
+	
+	// Migration for existing databases (add last_processed_sentence if missing)
+	// We ignore the error if column exists
+	_, _ = db.Exec("ALTER TABLE sources ADD COLUMN last_processed_sentence INTEGER DEFAULT -1;")
+	
+	return nil
 }

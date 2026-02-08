@@ -1,0 +1,80 @@
+{
+  "words": [
+    {
+      "id": "1215230",
+      "kanji": [
+        {
+          "common": true,
+          "text": "記事",
+          "tags": []
+        }
+      ],
+      "kana": [
+        {
+          "common": true,
+          "text": "きじ",
+          "tags": []
+        }
+      ],
+      "sense": [
+        {
+          "gloss": [
+            {
+              "lang": "eng",
+              "text": "article"
+            },
+            {
+              "lang": "eng",
+              "text": "news story"
+            },
+            {
+              "lang": "eng",
+              "text": "report"
+            },
+            {
+              "lang": "eng",
+              "text": "account"
+            }
+          ],
+          "partOfSpeech": [
+            "n"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "1441760",
+      "kanji": [
+        {
+          "common": true,
+          "text": "姉",
+          "tags": ["wanikani18"]
+        }
+      ],
+      "kana": [
+        {
+          "common": true,
+          "text": "あね",
+          "tags": []
+        }
+      ],
+      "sense": [
+        {
+          "gloss": [
+            {
+              "lang": "eng",
+              "text": "older sister"
+            },
+            {
+              "lang": "eng",
+              "text": "elder sister"
+            }
+          ],
+          "partOfSpeech": [
+            "n"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 package readerer
 
 import (
+	"regexp"
 	"strings"
 
 	"github.com/ikawaha/kagome-dict/ipa"
@@ -18,6 +19,12 @@ type Token struct {
 	PartsOfSpeech []string // e.g. ["動詞", "自立", "*", "*"] (Kagome POS labels)
 	// PrimaryPOS stores the first (primary) part of speech if available.
 	PrimaryPOS string
+}
+
+// Sentence represents a sentence containing tokens.
+type Sentence struct {
+	Text   string
+	Tokens []Token
 }
 
 // Analyzer handles text segmentation.
@@ -88,4 +95,60 @@ func (a *Analyzer) Analyze(text string) ([]Token, error) {
 	}
 
 	return result, nil
+}
+
+// AnalyzeDocument splits the text into sentences and tokenizes each sentence.
+func (a *Analyzer) AnalyzeDocument(text string) ([]Sentence, error) {
+	rawSentences := splitSentences(text)
+	var result []Sentence
+
+	for _, s := range rawSentences {
+		if strings.TrimSpace(s) == "" {
+			continue
+		}
+		tokens, err := a.Analyze(s)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, Sentence{
+			Text:   s,
+			Tokens: tokens,
+		})
+	}
+	return result, nil
+}
+
+func splitSentences(text string) []string {
+	var sentences []string
+	var current strings.Builder
+
+	for _, r := range text {
+		current.WriteRune(r)
+		// Split on common Japanese sentence delimiters and newlines.
+		// 。(3002), ！(FF01), ？(FF1F)
+		if r == '。' || r == '！' || r == '？' || r == '\n' {
+			sentences = append(sentences, current.String())
+			current.Reset()
+		}
+	}
+	if current.Len() > 0 {
+		sentences = append(sentences, current.String())
+	}
+	return sentences
+}
+
+// SanitizeRuby removes ruby text (<rt>...</rt>) and ruby parentheses (<rp>...</rp>)
+// from HTML content. This is useful because readability extracts all text including
+// furigana, which leads to duplication (e.g. "漢字" becomes "漢字かんじ").
+// This function operates on bytes and is generally safe for Shift_JIS as well,
+// because <, >, r, t, p are ASCII and < is not a trailing byte in Shift_JIS.
+func SanitizeRuby(content []byte) []byte {
+// (?s) allows dot to match newlines
+// (?i) makes it case-insensitive
+reRT := regexp.MustCompile(`(?si)<rt\b[^>]*>.*?</rt>`)
+reRP := regexp.MustCompile(`(?si)<rp\b[^>]*>.*?</rp>`)
+
+cleaned := reRT.ReplaceAll(content, []byte{})
+cleaned = reRP.ReplaceAll(cleaned, []byte{})
+return cleaned
 }

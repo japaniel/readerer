@@ -68,8 +68,12 @@ summary: "Ingest Japanese articles/ebooks, detect unknown words/phrases, extract
 
 ## Architecture Overview 🔧
 
-- Input layer: file/URL importer → text extractor.
-- NLP layer: tokenizer + morphological analyzer → dictionary lookup (JMdict/KANJIDIC).
+- Input layer: file/URL importer → text extractor (`go-readability`).
+- NLP layer: 
+  - Tokenizer (`kagome`) + morphological analyzer.
+  - Sentence boundary detection (context extraction).
+  - Dictionary lookup (JMdict/KANJIDIC).
+- Persistence layer: SQLite storing `Words`, `Sources`, and `WordSources` (context).
 - Candidate selector: unknown detection, frequency filters, POS/script heuristics.
 - Phrase detector: n-grams + PMI + POS heuristics.
 - UI: inline reader, candidate list, card editor.
@@ -85,8 +89,10 @@ Flow: Ingest → Analyze → Candidate List → Review → Card Generation → A
 - **Input Extraction:** Use **`github.com/go-shiori/go-readability`** to strip non-content HTML (ads, navs) from URLs before processing.
 - **Tokenization & Morphology:** Use **Kagome** (`github.com/ikawaha/kagome`) for pure Go morphological analysis (MeCab port).
   - Approach: Split text into tokens to extract `BaseForm` (Lemma) and `Reading`.
-- **Dictionaries:** Use **Jitendex** (Yomitan format/JSON) as the primary data source.
-  - Approach: Import Yomitan-formatted JSONs (`term_bank`, `kanji_bank`) into local SQLite. This provides richer pre-formatted definitions and metadata compared to raw JMdict/KANJIDIC XML.
+- **Dictionaries:** Use **Jitendex** / **JMdict** (JSON) as the primary data source.
+  - Approach: Auto-download and cache **JMdict-Simplified** JSONs.
+  - Initial MVP: English definitions from JMdict.
+  - Integration: Store definitions in SQLite `definitions` column (JSON blob) alongside words.
 - **Database:** SQLite using `github.com/mattn/go-sqlite3` (CGO) for initial development.
 - **Anki Integration:** AnkiConnect (HTTP) for push; `.apkg` export via an implemented Go exporter or by invoking `genanki` as an external tool.
 - **CI & Quality:** GitHub Actions with `golangci-lint`, `go test`, and `go vet` for static analysis and testing.

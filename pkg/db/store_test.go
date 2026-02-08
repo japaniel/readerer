@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"fmt"
 	"testing"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -26,11 +27,11 @@ func setupTestDB(t *testing.T) *sql.DB {
 func TestCreateOrGetWord(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
-	id1, err := CreateOrGetWord(db, "犬", "犬", "ja")
+	id1, err := CreateOrGetWord(db, "犬", "犬", "いぬ", "", "ja")
 	if err != nil {
 		t.Fatalf("create word: %v", err)
 	}
-	id2, err := CreateOrGetWord(db, "犬", "犬", "ja")
+	id2, err := CreateOrGetWord(db, "犬", "犬", "いぬ", "", "ja")
 	if err != nil {
 		t.Fatalf("get word: %v", err)
 	}
@@ -58,7 +59,7 @@ func TestCreateOrGetSource(t *testing.T) {
 func TestLinkAndQuery(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
-	wID, err := CreateOrGetWord(db, "猫", "猫", "ja")
+	wID, err := CreateOrGetWord(db, "猫", "猫", "ねこ", "", "ja")
 	if err != nil {
 		t.Fatalf("create word: %v", err)
 	}
@@ -102,7 +103,7 @@ func TestCreateOrGetWordConcurrency(t *testing.T) {
 	ids := make(chan int64, n)
 	for i := 0; i < n; i++ {
 		go func() {
-			id, err := CreateOrGetWord(db, "犬", "犬", "ja")
+			id, err := CreateOrGetWord(db, "犬", "犬", "いぬ", "", "ja")
 			if err != nil {
 				t.Errorf("create or get word: %v", err)
 				ids <- 0
@@ -177,7 +178,7 @@ func TestCreateOrGetSourceConcurrency(t *testing.T) {
 func TestCreateOrGetWordEmpty(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
-	_, err := CreateOrGetWord(db, "  ", "", "ja")
+	_, err := CreateOrGetWord(db, "  ", "", "", "", "ja")
 	if err == nil {
 		t.Fatalf("expected error for empty word")
 	}
@@ -186,7 +187,7 @@ func TestCreateOrGetWordEmpty(t *testing.T) {
 func TestGetWordsBySourceNullCols(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
-	wID, err := CreateOrGetWord(db, "魚", "魚", "ja")
+	wID, err := CreateOrGetWord(db, "魚", "魚", "さかな", "", "ja")
 	if err != nil {
 		t.Fatalf("create word: %v", err)
 	}
@@ -204,8 +205,8 @@ func TestGetWordsBySourceNullCols(t *testing.T) {
 	if len(words) != 1 {
 		t.Fatalf("expected 1 word, got %d", len(words))
 	}
-	if words[0].Pronunciation != "" {
-		t.Fatalf("expected empty pronunciation, got %s", words[0].Pronunciation)
+	if words[0].Pronunciation != "さかな" {
+		t.Fatalf("expected pronunciation 'さかな', got %s", words[0].Pronunciation)
 	}
 	if words[0].ImageURL != "" {
 		t.Fatalf("expected empty image url, got %s", words[0].ImageURL)
@@ -215,7 +216,7 @@ func TestGetWordsBySourceNullCols(t *testing.T) {
 func TestLinkUpdatesContext(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
-	wID, err := CreateOrGetWord(db, "鳥", "鳥", "ja")
+	wID, err := CreateOrGetWord(db, "鳥", "鳥", "とり", "", "ja")
 	if err != nil {
 		t.Fatalf("create word: %v", err)
 	}
@@ -275,7 +276,7 @@ func TestDefinitionsPersistence(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
 
-	wID, err := CreateOrGetWord(db, "試験", "試験", "ja")
+	wID, err := CreateOrGetWord(db, "試験", "試験", "しけん", "", "ja")
 	if err != nil {
 		t.Fatalf("create word: %v", err)
 	}
@@ -301,5 +302,56 @@ func TestDefinitionsPersistence(t *testing.T) {
 	}
 	if words[0].Definitions != defsJSON {
 		t.Fatalf("expected definitions %s, got %s", defsJSON, words[0].Definitions)
+	}
+}
+
+func TestLinkWordToSource_ContextLimit(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	wID, err := CreateOrGetWord(db, "TestWord", "Lemma", "Reading", "", "ja")
+	if err != nil {
+		t.Fatalf("create word: %v", err)
+	}
+
+	sID, err := CreateOrGetSource(db, "website", "Title", "Author", "Site", "http://example.com/limit", "")
+	if err != nil {
+		t.Fatalf("create source: %v", err)
+	}
+
+	// Insert 7 different contexts
+	for i := 1; i <= 7; i++ {
+		ctx := fmt.Sprintf("Context sentence %d.", i)
+		err := LinkWordToSource(db, wID, sID, ctx, ctx)
+		if err != nil {
+			t.Fatalf("link iteration %d: %v", i, err)
+		}
+	}
+
+	// Verify occurrence count is 7
+	var count int
+	err = db.QueryRow("SELECT occurrence_count FROM word_sources WHERE word_id = ? AND source_id = ?", wID, sID).Scan(&count)
+	if err != nil {
+		t.Fatalf("query count: %v", err)
+	}
+	if count != 7 {
+		t.Errorf("expected occurrence_count=7, got %d", count)
+	}
+
+	// Verify context lines count is 5
+	// We need to resolve word_source_id first
+	var wsID int64
+	err = db.QueryRow("SELECT id FROM word_sources WHERE word_id = ? AND source_id = ?", wID, sID).Scan(&wsID)
+	if err != nil {
+		t.Fatalf("get word_source_id: %v", err)
+	}
+
+	var ctxCount int
+	err = db.QueryRow("SELECT COUNT(*) FROM word_contexts WHERE word_source_id = ?", wsID).Scan(&ctxCount)
+	if err != nil {
+		t.Fatalf("query distinct contexts: %v", err)
+	}
+	if ctxCount != 5 {
+		t.Errorf("expected 5 stored contexts, got %d", ctxCount)
 	}
 }

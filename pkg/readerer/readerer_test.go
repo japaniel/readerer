@@ -1,6 +1,7 @@
 package readerer
 
 import (
+	"bytes"
 	"net/url"
 	"os"
 	"strings"
@@ -182,4 +183,113 @@ func TestPrimaryPOSSet(t *testing.T) {
 	if !found {
 		t.Error("Expected at least one token to have PrimaryPOS set and match PartsOfSpeech[0]")
 	}
+}
+
+func TestDocumentSegmentation_Sample(t *testing.T) {
+	// Use the local sample HTML
+	f, err := os.Open("testdata/sample_article.html")
+	if err != nil {
+		t.Fatalf("Failed to open test data: %v", err)
+	}
+	defer f.Close()
+
+	fakeURL, _ := url.Parse("http://localhost/sample")
+	article, err := readability.FromReader(f, fakeURL)
+	if err != nil {
+		t.Fatalf("Readability extraction failed: %v", err)
+	}
+
+	analyzer, err := NewAnalyzer()
+	if err != nil {
+		t.Fatalf("Failed to create analyzer: %v", err)
+	}
+
+	// Use AnalyzeDocument instead of just Analyze
+	sentences, err := analyzer.AnalyzeDocument(article.TextContent)
+	if err != nil {
+		t.Fatalf("AnalyzeDocument failed: %v", err)
+	}
+
+	if len(sentences) < 2 {
+		t.Errorf("Expected multiple sentences, got %d", len(sentences))
+	}
+
+	// Check if sentences contain expected delimiters or meaningful content
+	hasPunctuation := false
+	for _, s := range sentences {
+		// Log a few for verification
+		// t.Logf("Sentence: %s", s.Text)
+		if strings.Contains(s.Text, "。") || strings.Contains(s.Text, "！") {
+			hasPunctuation = true
+		}
+		if len(s.Tokens) == 0 {
+			t.Errorf("Sentence has no tokens: %q", s.Text)
+		}
+	}
+
+	if !hasPunctuation {
+		t.Log("Warning: No Japanese punctuation found in split sentences (might be expected for short sample)")
+	}
+
+	t.Logf("Successfully split sample article into %d sentences", len(sentences))
+}
+
+func TestReadabilityFuriganaHandling(t *testing.T) {
+	content, err := os.ReadFile("testdata/furigana.html")
+	if err != nil {
+		t.Fatalf("Failed to open test data: %v", err)
+	}
+
+	sanitized := SanitizeRuby(content)
+
+	fakeURL, _ := url.Parse("http://localhost/furigana")
+	article, err := readability.FromReader(bytes.NewReader(sanitized), fakeURL)
+	if err != nil {
+		t.Fatalf("Readability extraction failed: %v", err)
+	}
+
+	t.Logf("Extracted Text: %q", article.TextContent)
+
+	if strings.Contains(article.TextContent, "漢字かんじ") {
+		t.Errorf("Readability output still contains furigana! content: %q", article.TextContent)
+	}
+	// Check for "Ruby with RP: 漢...字" case if applicable, but focusing on the main duplication
+}
+
+func TestSanitizeRuby(t *testing.T) {
+tests := []struct {
+name     string
+input    string
+expected string
+}{
+{
+name:     "Simple Ruby",
+input:    "<ruby>漢字<rt>かんじ</rt></ruby>",
+expected: "<ruby>漢字</ruby>",
+},
+{
+name:     "Ruby with RP",
+input:    "<ruby>漢字<rp>(</rp><rt>かんじ</rt><rp>)</rp></ruby>",
+expected: "<ruby>漢字</ruby>",
+},
+{
+name:     "Multiple Ruby",
+input:    "<ruby>私<rt>わたし</rt></ruby>は<ruby>猫<rt>ねこ</rt></ruby>である",
+expected: "<ruby>私</ruby>は<ruby>猫</ruby>である",
+},
+{
+name:     "Attributes in tags",
+input:    "<ruby class='test'>漢字<rt class='reading'>かんじ</rt></ruby>",
+expected: "<ruby class='test'>漢字</ruby>",
+},
+}
+
+for _, tt := range tests {
+t.Run(tt.name, func(t *testing.T) {
+result := SanitizeRuby([]byte(tt.input))
+if string(result) != tt.expected {
+t.Errorf("got %q, want %q", string(result), tt.expected)
+}
+})
+}
 }

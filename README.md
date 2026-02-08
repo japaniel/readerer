@@ -14,6 +14,7 @@ go run ./cmd/readerer -url "https://mariosakata.medium.com/remember-mediumjapan-
 - **Article Extraction**: Downloads web pages and isolates the main article text using `go-readability`.
 - **Tokenization**: Splits Japanese text into words using `Kagome` (Pure Go MeCab port).
 - **Analysis**: Provides Lemma (dictionary form) and Reading (Katakana) for each word.
+- **Dictionary Lookups**: Automatically downloads and caches the standard [JMdict](https://www.edrdg.org/jmdict/j_jmdict.html) dictionary to provide definitions for extracted vocabulary.
 
 ## Development
 
