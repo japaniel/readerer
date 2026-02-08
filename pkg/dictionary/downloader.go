@@ -112,6 +112,20 @@ func downloadAndExtract(ctx context.Context, url, destPath string) error {
 	}
 	defer gzReader.Close()
 
+	if strings.HasSuffix(url, ".gz") && !strings.HasSuffix(url, ".tar.gz") && !strings.HasSuffix(url, ".tgz") {
+		// Plain gzip file (e.g. .json.gz), not an archive
+		outFile, err := os.Create(destPath)
+		if err != nil {
+			return fmt.Errorf("failed to create output file: %w", err)
+		}
+		defer outFile.Close()
+
+		if _, err := io.Copy(outFile, gzReader); err != nil {
+			return fmt.Errorf("failed to write to file: %w", err)
+		}
+		return nil
+	}
+
 	// Try treating it as a tar stream
 	tarReader := tar.NewReader(gzReader)
 
