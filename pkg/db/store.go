@@ -112,18 +112,16 @@ func LinkWordToSource(db DBExecutor, wordID, sourceID int64, context, example st
 	}
 
 	// Limit stored contexts to 5 per word-source pair
-	var count int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM word_contexts WHERE word_source_id = ?`, wordSourceID).Scan(&count); err != nil {
-		return err
-	}
+	// Atomic insert using INSERT ... SELECT ... WHERE count < 5
+	// This prevents race conditions where concurrent ingesters might both see count < 5 and insert.
+	_, err = db.Exec(`
+		INSERT INTO word_contexts (word_source_id, sentence)
+		SELECT ?, ?
+		WHERE (SELECT COUNT(*) FROM word_contexts WHERE word_source_id = ?) < 5
+		ON CONFLICT DO NOTHING`,
+		wordSourceID, context, wordSourceID)
 
-	if count < 5 {
-		_, err := db.Exec(`INSERT OR IGNORE INTO word_contexts (word_source_id, sentence) VALUES (?, ?)`, wordSourceID, context)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
+	return err
 }
 
 // UpdateWordDefinitions updates the definitions JSON for a given word.
@@ -179,16 +177,16 @@ func GetWordsBySource(db DBExecutor, sourceID int64) ([]Word, error) {
 
 // GetSourceProgress returns the last processed sentence index for a source.
 func GetSourceProgress(db DBExecutor, sourceID int64) (int, error) {
-var index int
-err := db.QueryRow("SELECT last_processed_sentence FROM sources WHERE id = ?", sourceID).Scan(&index)
-if err != nil {
-return 0, err
-}
-return index, nil
+	var index int
+	err := db.QueryRow("SELECT last_processed_sentence FROM sources WHERE id = ?", sourceID).Scan(&index)
+	if err != nil {
+		return 0, err
+	}
+	return index, nil
 }
 
 // UpdateSourceProgress updates the last processed sentence index.
 func UpdateSourceProgress(db DBExecutor, sourceID int64, index int) error {
-_, err := db.Exec("UPDATE sources SET last_processed_sentence = ? WHERE id = ?", index, sourceID)
-return err
+	_, err := db.Exec("UPDATE sources SET last_processed_sentence = ? WHERE id = ?", index, sourceID)
+	return err
 }
