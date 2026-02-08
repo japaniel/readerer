@@ -14,17 +14,21 @@
     "GOPROXY": "https://proxy.golang.org,direct",
     "SSH_AUTH_SOCK": ""
   },
-  "settings": {
-    "go.toolsEnvVars": {
-      "GOBIN": "/go/bin"
-    },
-    "go.useLanguageServer": true
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "go.toolsEnvVars": {
+          "GOBIN": "/go/bin"
+        },
+        "go.useLanguageServer": true
+      },
+      "extensions": [
+        "golang.go",
+        "eamodio.gitlens",
+        "ms-vscode-remote.remote-containers"
+      ]
+    }
   },
-  "extensions": [
-    "golang.go",
-    "eamodio.gitlens",
-    "ms-vscode-remote.remote-containers"
-  ],
   "mounts": [
     "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached"
   ],
