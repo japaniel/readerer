@@ -123,10 +123,22 @@ func main() {
 		log.Fatalf("Error: Got status code %d (Blocking or API Error)", resp.StatusCode)
 	}
 
-	// Read content to sanitize ruby tags
-	bodyBytes, err := io.ReadAll(resp.Body)
+	// Read content with size limit to prevent OOM from untrusted URLs
+	const maxBodySize = 10 * 1024 * 1024 // 10 MB limit for HTML content
+
+	if resp.ContentLength > int64(maxBodySize) {
+		log.Fatalf("Content-Length %d exceeds limit of %d bytes", resp.ContentLength, maxBodySize)
+	}
+
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxBodySize))
 	if err != nil {
 		log.Fatalf("Failed to read response body: %v", err)
+	}
+	// Note: io.ReadAll(LimitReader) returns EOF when limit is reached.
+	// If the buffer is full, we assume it might be truncated (or exactly the limit).
+	// To distinguish, one could read one more byte, but typically hitting the limit is failure enough.
+	if int64(len(bodyBytes)) >= int64(maxBodySize) {
+		log.Fatalf("Response body exceeded maximum size limit of %d bytes", maxBodySize)
 	}
 
 	// Sanitize Ruby tags (remove <rt>...</rt>) to prevent duplicate text
