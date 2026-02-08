@@ -3,24 +3,32 @@
   "build": {
     "dockerfile": "Dockerfile"
   },
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {}
+  },
   "remoteUser": "vscode",
   "postCreateCommand": "go version || true && mkdir -p /workspace/.gopath/{bin,pkg/mod/cache/download} && chown -R $(id -u):$(id -g) /workspace/.gopath",
   "containerEnv": {
     "GOPATH": "/workspace/.gopath",
     "GOMODCACHE": "/workspace/.gopath/pkg/mod",
-    "GOPROXY": "https://proxy.golang.org,direct"
+    "GOPROXY": "https://proxy.golang.org,direct",
+    "SSH_AUTH_SOCK": ""
   },
-  "settings": {
-    "go.toolsEnvVars": {
-      "GOBIN": "/go/bin"
-    },
-    "go.useLanguageServer": true
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "go.toolsEnvVars": {
+          "GOBIN": "/go/bin"
+        },
+        "go.useLanguageServer": true
+      },
+      "extensions": [
+        "golang.go",
+        "eamodio.gitlens",
+        "ms-vscode-remote.remote-containers"
+      ]
+    }
   },
-  "extensions": [
-    "golang.go",
-    "eamodio.gitlens",
-    "ms-vscode-remote.remote-containers"
-  ],
   "mounts": [
     "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached"
   ],

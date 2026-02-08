@@ -29,6 +29,22 @@
       "presentation": {
         "reveal": "always"
       }
+    },
+    {
+      "label": "readerer: sample",
+      "type": "shell",
+      "command": "go",
+      "args": [
+        "run",
+        "./cmd/readerer",
+        "-url",
+        "https://mariosakata.medium.com/remember-mediumjapan-2f7ce526611c"
+      ],
+      "group": "test",
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      }
     }
   ]
 }

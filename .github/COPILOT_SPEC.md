@@ -45,6 +45,7 @@ summary: "Ingest Japanese articles/ebooks, detect unknown words/phrases, extract
 ## Functional Requirements ✅
 
 - FR1: Support `EPUB`, `PDF`, `HTML`, and `TXT` input and reliably extract Japanese text.
+  - **FR1.1 (Immediate)**: CLI tool that accepts a URL, extracts article text using `go-readability`, and outputs tokenized Japanese.
 - FR2: Provide token attributes: surface, lemma, reading, POS, glosses (JMdict).
 - FR3: Unknown detection: lemma not in user-known set (Anki decks + local list), configurable whitelist/blacklist.
 - FR4: Extract and score example sentences (prefer short, single-clause examples).
@@ -79,11 +80,14 @@ Flow: Ingest → Analyze → Candidate List → Review → Card Generation → A
 
 ## Implementation & Tech Stack 🛠️
 
-- **Language:** Go (Go 1.20+), core services and CLI implemented as Go modules.
+- **Language:** Go (Go 1.24+), core services and CLI implemented as Go modules.
 - **Build & Distribution:** `go mod` for dependency management; single static binary for distribution; GitHub Actions for cross-compilation and releases.
-- **Tokenization & Morphology:** Prefer MeCab via Go bindings (e.g., `shogo82148/go-mecab`) or call external analyzers (MeCab/Sudachi) as subprocesses to preserve offline support.
-- **Dictionaries:** JMdict/KANJIDIC parsed into a local SQLite database or accessed via efficient Go parsers.
-- **Database:** SQLite using `github.com/mattn/go-sqlite3` (CGO) for initial development; consider `modernc.org/sqlite` (CGO-free) later for distribution-focused builds.
+- **Input Extraction:** Use **`github.com/go-shiori/go-readability`** to strip non-content HTML (ads, navs) from URLs before processing.
+- **Tokenization & Morphology:** Use **Kagome** (`github.com/ikawaha/kagome`) for pure Go morphological analysis (MeCab port).
+  - Approach: Split text into tokens to extract `BaseForm` (Lemma) and `Reading`.
+- **Dictionaries:** Use **Jitendex** (Yomitan format/JSON) as the primary data source.
+  - Approach: Import Yomitan-formatted JSONs (`term_bank`, `kanji_bank`) into local SQLite. This provides richer pre-formatted definitions and metadata compared to raw JMdict/KANJIDIC XML.
+- **Database:** SQLite using `github.com/mattn/go-sqlite3` (CGO) for initial development.
 - **Anki Integration:** AnkiConnect (HTTP) for push; `.apkg` export via an implemented Go exporter or by invoking `genanki` as an external tool.
 - **CI & Quality:** GitHub Actions with `golangci-lint`, `go test`, and `go vet` for static analysis and testing.
 
