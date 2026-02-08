@@ -10,9 +10,10 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"time"
-
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/go-shiori/go-readability"
 	"github.com/japaniel/readerer/pkg/db"
@@ -28,6 +29,10 @@ func main() {
 	dbFlag := flag.String("db", "readerer.db", "Path to SQLite database")
 	dictFlag := flag.String("import-dict", "", "Path to JMdict-Simplified JSON file to import definitions")
 	flag.Parse()
+
+	// Setup context for graceful shutdown
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
 
 	// Initialize DB
 	conn, err := sql.Open("sqlite3", *dbFlag)
@@ -66,7 +71,7 @@ func main() {
 	// Prepare Dictionary for Pipeline (Auto-Download / Cache)
 	// We load it here so we can inject definitions as we ingest words.
 	const dictPath = "jmdict-eng-common.json"
-	if err := dictionary.EnsureDictionary(dictPath); err != nil {
+	if err := dictionary.EnsureDictionary(ctx, dictPath); err != nil {
 		log.Printf("Warning: Failed to ensure dictionary at %s: %v. Continuing without definitions.", dictPath, err)
 	}
 
@@ -89,7 +94,7 @@ func main() {
 	fmt.Printf("Fetching %s...\n", *urlFlag)
 
 	// Create a custom request with a User-Agent to avoid being blocked (e.g. 403 Forbidden or Cloudflare)
-	req, err := http.NewRequest("GET", *urlFlag, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", *urlFlag, nil)
 	if err != nil {
 		log.Fatalf("Failed to create request: %v", err)
 	}
@@ -161,7 +166,7 @@ func main() {
 	fmt.Printf("Analyzed %d sentences.\n", len(sentences))
 
 	ingester := ingest.NewIngester(conn, defsImporter)
-	linkCount, err = ingester.Ingest(context.Background(), sourceID, sentences)
+	linkCount, err = ingester.Ingest(ctx, sourceID, sentences)
 	if err != nil {
 		log.Fatalf("Ingestion failed: %v", err)
 	}

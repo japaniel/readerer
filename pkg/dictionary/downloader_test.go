@@ -1,6 +1,7 @@
 package dictionary
 
 import (
+	"context"
 	"io/ioutil"
 	"os"
 	"testing"
@@ -24,7 +25,7 @@ func TestEnsureDictionary_LocalCache(t *testing.T) {
 	// b) Fail if specific GitHub env vars or network are missing (maybe)
 	// c) Or overwrite the file
 	// But definitively, if it returns error, we fail. If it tries to download, it *might* fail.
-	err = EnsureDictionary(tmpFile.Name())
+	err = EnsureDictionary(context.Background(), tmpFile.Name())
 	if err != nil {
 		t.Fatalf("EnsureDictionary failed with local file: %v", err)
 	}

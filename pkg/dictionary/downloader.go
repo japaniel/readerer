@@ -3,6 +3,7 @@ package dictionary
 import (
 	"archive/tar"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,7 +21,7 @@ const (
 
 // EnsureDictionary checks if the dictionary exists at path.
 // If not, it discovers the latest release from GitHub, downloads it, and decompresses it.
-func EnsureDictionary(path string) error {
+func EnsureDictionary(ctx context.Context, path string) error {
 	if _, err := os.Stat(path); err == nil {
 		// File exists
 		return nil
@@ -30,19 +31,19 @@ func EnsureDictionary(path string) error {
 
 	fmt.Printf("Dictionary not found at %s. Attempting auto-download...\n", path)
 
-	downloadURL, err := getLatestReleaseAssetURL()
+	downloadURL, err := getLatestReleaseAssetURL(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to find latest dictionary release: %w", err)
 	}
 
 	fmt.Printf("Downloading from %s...\n", downloadURL)
-	return downloadAndExtract(downloadURL, path)
+	return downloadAndExtract(ctx, downloadURL, path)
 }
 
-func getLatestReleaseAssetURL() (string, error) {
+func getLatestReleaseAssetURL(ctx context.Context) (string, error) {
 	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", repoOwner, repoName)
 	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest("GET", apiURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
 	if err != nil {
 		return "", err
 	}
@@ -81,9 +82,19 @@ func getLatestReleaseAssetURL() (string, error) {
 	return "", fmt.Errorf("no suitable dictionary asset found in latest release")
 }
 
-func downloadAndExtract(url, destPath string) error {
+func downloadAndExtract(ctx context.Context, url, destPath string) error {
 	// Create temp file for download
-	resp, err := http.Get(url)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return err
+	}
+
+	// Use a client with a generous timeout for the large file download
+	client := &http.Client{
+		Timeout: 30 * time.Minute,
+	}
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
