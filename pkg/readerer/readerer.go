@@ -137,18 +137,20 @@ func splitSentences(text string) []string {
 	return sentences
 }
 
+var (
+	// (?s) allows dot to match newlines
+	// (?i) makes it case-insensitive
+	reRT = regexp.MustCompile(`(?si)<rt\b[^>]*>.*?</rt>`)
+	reRP = regexp.MustCompile(`(?si)<rp\b[^>]*>.*?</rp>`)
+)
+
 // SanitizeRuby removes ruby text (<rt>...</rt>) and ruby parentheses (<rp>...</rp>)
 // from HTML content. This is useful because readability extracts all text including
 // furigana, which leads to duplication (e.g. "漢字" becomes "漢字かんじ").
 // This function operates on bytes and is generally safe for Shift_JIS as well,
 // because <, >, r, t, p are ASCII and < is not a trailing byte in Shift_JIS.
 func SanitizeRuby(content []byte) []byte {
-// (?s) allows dot to match newlines
-// (?i) makes it case-insensitive
-reRT := regexp.MustCompile(`(?si)<rt\b[^>]*>.*?</rt>`)
-reRP := regexp.MustCompile(`(?si)<rp\b[^>]*>.*?</rp>`)
-
-cleaned := reRT.ReplaceAll(content, []byte{})
-cleaned = reRP.ReplaceAll(cleaned, []byte{})
-return cleaned
+	cleaned := reRT.ReplaceAll(content, []byte{})
+	cleaned = reRP.ReplaceAll(cleaned, []byte{})
+	return cleaned
 }
