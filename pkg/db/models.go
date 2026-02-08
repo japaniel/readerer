@@ -11,6 +11,8 @@ type Word struct {
 	Pronunciation string
 	ImageURL      string
 	MnemonicText  string
+	// Definitions typically stores the JSON list of senses from the dictionary.
+	Definitions string
 }
 
 // Source is a provenance record for where a word was seen.

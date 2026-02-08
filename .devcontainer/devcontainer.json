@@ -8,7 +8,8 @@
   "containerEnv": {
     "GOPATH": "/workspace/.gopath",
     "GOMODCACHE": "/workspace/.gopath/pkg/mod",
-    "GOPROXY": "https://proxy.golang.org,direct"
+    "GOPROXY": "https://proxy.golang.org,direct",
+    "SSH_AUTH_SOCK": ""
   },
   "settings": {
     "go.toolsEnvVars": {
