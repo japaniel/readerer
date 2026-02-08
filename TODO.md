@@ -26,7 +26,13 @@
   - [x] Check for cached dictionary locally.
   - [x] If missing, automatically download specific JMdict (English) release.
   - [x] Decompress and cache for future runs.
-  - [ ] **Filter Non-Japanese**: Filter out tokens that are non-Japanese (e.g. English words, pure numbers) to ensure only Japanese vocabulary is captured.
+  - [x] **Filter Non-Japanese**: Filter out tokens that are non-Japanese (e.g. English words, pure numbers) to ensure only Japanese vocabulary is captured.
+
+## Phase 4: Reliability & Optimization (Done)
+- [x] **Resume Ingestion**: Implement checkpointing to resume processing from the last sentence if interrupted.
+- [x] **Memory Safety**: Limit reading of large files to prevent OOM.
+- [x] **Thread Safety**: Use atomic SQL operations and `ensureColumnExists` for robust DB interactions.
+- [x] **Refactoring**: Decouple library logic from CLI UI (logging and progress callbacks).
   
 - [x] **Multi-Context Storage (Done)**:
   - [x] Update schema to store multiple context sentences per word-source pair (instead of overwriting).

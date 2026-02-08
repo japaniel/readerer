@@ -17,6 +17,10 @@ type Ingester struct {
 	DB           *sql.DB
 	DictImporter *dictionary.Importer
 	BatchSize    int
+	// Logger is used for informational messages (e.g. resume status). nil means no logging.
+	Logger *log.Logger
+	// OnProgress is called periodically with the number of processed sentences and total sentences.
+	OnProgress func(current, total int)
 }
 
 // NewIngester creates a new Ingester.
@@ -39,7 +43,9 @@ func (ig *Ingester) Ingest(ctx context.Context, sourceID int64, sentences []read
 	}
 
 	if lastProcessed >= 0 {
-		fmt.Printf("Resuming from sentence index %d (skipping %d messages)\n", lastProcessed+1, lastProcessed+1)
+		if ig.Logger != nil {
+			ig.Logger.Printf("Resuming from sentence index %d (skipping %d messages)\n", lastProcessed+1, lastProcessed+1)
+		}
 	} else if lastProcessed == -1 {
 		// Just starting or no progress found
 	}
@@ -156,7 +162,9 @@ func (ig *Ingester) Ingest(ctx context.Context, sourceID int64, sentences []read
 			if err := commitTx(); err != nil {
 				return linkCount, err
 			}
-			fmt.Printf("\rProcessed %d/%d sentences...", i+1, len(sentences))
+			if ig.OnProgress != nil {
+				ig.OnProgress(i+1, len(sentences))
+			}
 		}
 	}
 
@@ -169,7 +177,10 @@ func (ig *Ingester) Ingest(ctx context.Context, sourceID int64, sentences []read
 			return linkCount, err
 		}
 	}
-	fmt.Println() // Newline after progress bar
+	// Explicit final progress update
+	if ig.OnProgress != nil {
+		ig.OnProgress(len(sentences), len(sentences))
+	}
 
 	return linkCount, nil
 }

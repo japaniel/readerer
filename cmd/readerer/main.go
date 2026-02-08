@@ -178,6 +178,16 @@ func main() {
 	fmt.Printf("Analyzed %d sentences.\n", len(sentences))
 
 	ingester := ingest.NewIngester(conn, defsImporter)
+
+	// Configure logging and progress for CLI output
+	ingester.Logger = log.New(os.Stderr, "", 0) // Log info to stderr without timestamp prefix for cleaner output
+	ingester.OnProgress = func(current, total int) {
+		fmt.Printf("\rProcessed %d/%d sentences...", current, total)
+		if current == total {
+			fmt.Println() // Newline at the end
+		}
+	}
+
 	linkCount, err = ingester.Ingest(ctx, sourceID, sentences)
 	if err != nil {
 		log.Fatalf("Ingestion failed: %v", err)
