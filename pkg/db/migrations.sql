@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS words (
     pronunciation TEXT,
     image_url TEXT,
     mnemonic_text TEXT,
+    definitions TEXT,
     UNIQUE(word, lemma, language)
 );
 

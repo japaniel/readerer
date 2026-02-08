@@ -68,8 +68,12 @@ func main() {
 		if count >= 20 {
 			break
 		}
-		// Print Format: [Surface] -> (Base:Reading)
-		fmt.Printf("[%s] -> (%s : %s) POS: %v\n", t.Surface, t.BaseForm, t.Reading, t.PartsOfSpeech[0])
+		// Print Format: [Surface] -> (Base:Reading) PrimaryPOS
+		pos := t.PrimaryPOS
+		if pos == "" {
+			pos = "<unknown>"
+		}
+		fmt.Printf("[%s] -> (%s : %s) POS: %s\n", t.Surface, t.BaseForm, t.Reading, pos)
 		count++
 	}
 }

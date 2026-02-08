@@ -115,9 +115,18 @@ func LinkWordToSource(db *sql.DB, wordID, sourceID int64, context, example strin
 	return err
 }
 
+// UpdateWordDefinitions updates the definitions JSON for a given word.
+func UpdateWordDefinitions(db *sql.DB, wordID int64, definitions string) error {
+	if wordID <= 0 {
+		return fmt.Errorf("wordID must be positive")
+	}
+	_, err := db.Exec(`UPDATE words SET definitions = ? WHERE id = ?`, definitions, wordID)
+	return err
+}
+
 // GetWordsBySource returns words associated with a given source id.
 func GetWordsBySource(db *sql.DB, sourceID int64) ([]Word, error) {
-	rows, err := db.Query(`SELECT w.id, w.word, w.lemma, w.language, w.pronunciation, w.image_url, w.mnemonic_text FROM words w JOIN word_sources ws ON ws.word_id = w.id WHERE ws.source_id = ?`, sourceID)
+	rows, err := db.Query(`SELECT w.id, w.word, w.lemma, w.language, w.pronunciation, w.image_url, w.mnemonic_text, w.definitions FROM words w JOIN word_sources ws ON ws.word_id = w.id WHERE ws.source_id = ?`, sourceID)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +136,8 @@ func GetWordsBySource(db *sql.DB, sourceID int64) ([]Word, error) {
 		var w Word
 		var lemma, lang sql.NullString
 		var pron, img, mn sql.NullString
-		if err := rows.Scan(&w.ID, &w.Word, &lemma, &lang, &pron, &img, &mn); err != nil {
+		var defs sql.NullString
+		if err := rows.Scan(&w.ID, &w.Word, &lemma, &lang, &pron, &img, &mn, &defs); err != nil {
 			return nil, err
 		}
 		if lemma.Valid {
@@ -144,6 +154,9 @@ func GetWordsBySource(db *sql.DB, sourceID int64) ([]Word, error) {
 		}
 		if mn.Valid {
 			w.MnemonicText = mn.String
+		}
+		if defs.Valid {
+			w.Definitions = defs.String
 		}
 		out = append(out, w)
 	}

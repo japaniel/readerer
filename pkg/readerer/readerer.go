@@ -15,7 +15,9 @@ type Token struct {
 	Surface       string   // The text as it appears (e.g. "行っ")
 	BaseForm      string   // The dictionary form (e.g. "行く")
 	Reading       string   // The pronunciation (katakana, e.g. "イッ")
-	PartsOfSpeech []string // e.g. ["动词", "自立", "*", "*"]
+	PartsOfSpeech []string // e.g. ["動詞", "自立", "*", "*"] (Kagome POS labels)
+	// PrimaryPOS stores the first (primary) part of speech if available.
+	PrimaryPOS string
 }
 
 // Analyzer handles text segmentation.
@@ -70,11 +72,18 @@ func (a *Analyzer) Analyze(text string) ([]Token, error) {
 			continue
 		}
 
+		// Determine primary POS safely
+		primaryPOS := ""
+		if len(features) > 0 {
+			primaryPOS = features[0]
+		}
+
 		result = append(result, Token{
 			Surface:       token.Surface,
 			BaseForm:      base,
 			Reading:       reading,
 			PartsOfSpeech: features,
+			PrimaryPOS:    primaryPOS,
 		})
 	}
 

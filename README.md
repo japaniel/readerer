@@ -18,5 +18,5 @@ go run ./cmd/readerer -url "https://mariosakata.medium.com/remember-mediumjapan-
 ## Development
 
 Prerequisites:
-- Go 1.20+
+- Go 1.24+
 - (Optional) Dev Container included.

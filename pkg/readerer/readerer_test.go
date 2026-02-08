@@ -1,7 +1,6 @@
 package readerer
 
 import (
-	"fmt"
 	"net/url"
 	"os"
 	"strings"
@@ -70,7 +69,7 @@ func TestPipelineWithHTML(t *testing.T) {
 		t.Error("Expected to find token 'Medium'")
 	}
 
-	fmt.Printf("Successfully validated pipeline with %d tokens\n", len(tokens))
+	t.Logf("Successfully validated pipeline with %d tokens", len(tokens))
 }
 
 func TestAnalyzerWithTextFile(t *testing.T) {
@@ -101,7 +100,7 @@ func TestAnalyzerWithTextFile(t *testing.T) {
 	}
 
 	// Sanity check checks
-	fmt.Printf("Analyzed raw text file: %d tokens found\n", len(tokens))
+	t.Logf("Analyzed raw text file: %d tokens found", len(tokens))
 }
 
 func TestPipelineWithMainichi(t *testing.T) {
@@ -146,5 +145,41 @@ func TestPipelineWithMainichi(t *testing.T) {
 		t.Fatal("No tokens found from extracted text")
 	}
 
-	fmt.Printf("Successfully validated Mainichi pipeline with %d tokens\n", len(tokens))
+	t.Logf("Successfully validated Mainichi pipeline with %d tokens", len(tokens))
+}
+
+func TestPrimaryPOSSet(t *testing.T) {
+	f, err := os.Open("testdata/sample_article.html")
+	if err != nil {
+		t.Fatalf("Failed to open test data: %v", err)
+	}
+	defer f.Close()
+
+	fakeURL, _ := url.Parse("http://localhost/sample")
+	article, err := readability.FromReader(f, fakeURL)
+	if err != nil {
+		t.Fatalf("Readability extraction failed: %v", err)
+	}
+
+	analyzer, err := NewAnalyzer()
+	if err != nil {
+		t.Fatalf("Failed to create analyzer: %v", err)
+	}
+
+	tokens, err := analyzer.Analyze(article.TextContent)
+	if err != nil {
+		t.Fatalf("Analyze failed: %v", err)
+	}
+
+	// Ensure at least one token has PrimaryPOS set and matches PartsOfSpeech[0]
+	found := false
+	for _, tok := range tokens {
+		if len(tok.PartsOfSpeech) > 0 && tok.PrimaryPOS == tok.PartsOfSpeech[0] && tok.PrimaryPOS != "" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("Expected at least one token to have PrimaryPOS set and match PartsOfSpeech[0]")
+	}
 }

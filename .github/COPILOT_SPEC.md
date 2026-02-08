@@ -80,7 +80,7 @@ Flow: Ingest → Analyze → Candidate List → Review → Card Generation → A
 
 ## Implementation & Tech Stack 🛠️
 
-- **Language:** Go (Go 1.20+), core services and CLI implemented as Go modules.
+- **Language:** Go (Go 1.24+), core services and CLI implemented as Go modules.
 - **Build & Distribution:** `go mod` for dependency management; single static binary for distribution; GitHub Actions for cross-compilation and releases.
 - **Input Extraction:** Use **`github.com/go-shiori/go-readability`** to strip non-content HTML (ads, navs) from URLs before processing.
 - **Tokenization & Morphology:** Use **Kagome** (`github.com/ikawaha/kagome`) for pure Go morphological analysis (MeCab port).

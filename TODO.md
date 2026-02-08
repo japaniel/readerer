@@ -1,10 +1,12 @@
 # TODO
 
 ## Current Focus: CLI Reader Pipeline
-- [ ] Install `github.com/go-shiori/go-readability`
-- [ ] Create CLI entrypoint (`cmd/readerer/main.go`)
-- [ ] Connect URL fetcher -> Readability Extractor -> Kagome Tokenizer
-- [ ] Output list of Lemma + Reading to stdout
+- [x] Install `github.com/go-shiori/go-readability` ✅
+- [x] Create CLI entrypoint (`cmd/readerer/main.go`) ✅
+- [x] Connect URL fetcher -> Readability Extractor -> Kagome Tokenizer ✅
+- [x] Output list of Lemma + Reading to stdout ✅
+- [x] Add HTML and raw-text test fixtures and unit tests for pipeline (`pkg/readerer/testdata/*`, `pkg/readerer/readerer_test.go`) ✅
+- [x] Add Mainichi article fixture and regression test for pipeline ✅
 
 ## Future enhancements (deferred)
 

@@ -270,3 +270,36 @@ func TestLinkWordToSourceInvalidIDs(t *testing.T) {
 		t.Fatalf("expected error for negative wordID")
 	}
 }
+
+func TestDefinitionsPersistence(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	wID, err := CreateOrGetWord(db, "試験", "試験", "ja")
+	if err != nil {
+		t.Fatalf("create word: %v", err)
+	}
+	// set definitions JSON
+	defsJSON := `[{"sense":"test sense"}]`
+	if err := UpdateWordDefinitions(db, wID, defsJSON); err != nil {
+		t.Fatalf("update definitions: %v", err)
+	}
+	// link to a source and query
+	sID, err := CreateOrGetSource(db, "website_article", "", "", "example.com", "https://example.com/defs", "")
+	if err != nil {
+		t.Fatalf("create source: %v", err)
+	}
+	if err := LinkWordToSource(db, wID, sID, "文脈", "例文"); err != nil {
+		t.Fatalf("link: %v", err)
+	}
+	words, err := GetWordsBySource(db, sID)
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if len(words) != 1 {
+		t.Fatalf("expected 1 word, got %d", len(words))
+	}
+	if words[0].Definitions != defsJSON {
+		t.Fatalf("expected definitions %s, got %s", defsJSON, words[0].Definitions)
+	}
+}
