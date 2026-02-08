@@ -70,7 +70,7 @@ func TestIngestContextCancel(t *testing.T) {
 	sentences := make([]readerer.Sentence, 100)
 	for i := range sentences {
 		sentences[i] = readerer.Sentence{
-			Text: "Test",
+			Text:   "Test",
 			Tokens: []readerer.Token{{Surface: "A", BaseForm: "A", Reading: "A", PartsOfSpeech: []string{"Noun"}}},
 		}
 	}

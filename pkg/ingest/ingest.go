@@ -59,7 +59,7 @@ func (ig *Ingester) Ingest(ctx context.Context, sourceID int64, sentences []read
 		tx = nil
 		return nil
 	}
-	
+
 	// Ensure rollback if panic or error return without commit
 	defer func() {
 		if tx != nil {
@@ -76,8 +76,8 @@ func (ig *Ingester) Ingest(ctx context.Context, sourceID int64, sentences []read
 		select {
 		case <-ctx.Done():
 			// Attempt to commit whatever we have done in this batch so far?
-			// Generally safer to rollback incomplete batches, but if we haven't updated progress, 
-			// the data is there but "untracked". 
+			// Generally safer to rollback incomplete batches, but if we haven't updated progress,
+			// the data is there but "untracked".
 			// Actually, if we rollback, we lose the work of this partial batch, which is fine (consistency).
 			return linkCount, ctx.Err()
 		default:
