@@ -45,6 +45,25 @@
         "reveal": "always",
         "panel": "new"
       }
+    },
+    {
+      "label": "db: show context",
+      "type": "shell",
+      "command": "sqlite3 readerer.db \"SELECT w.word, ws.context_sentence FROM word_sources ws JOIN words w ON ws.word_id = w.id LIMIT 20;\"",
+      "problemMatcher": [],
+      "group": "test"
+    },
+    {
+      "label": "clean: db",
+      "type": "shell",
+      "command": "rm -f readerer.db",
+      "problemMatcher": []
+    },
+    {
+      "label": "clean: dictionary",
+      "type": "shell",
+      "command": "rm -f jmdict-eng-common.json",
+      "problemMatcher": []
     }
   ]
 }

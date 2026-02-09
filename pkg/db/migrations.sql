@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS sources (
     website TEXT,
     url TEXT,
     meta TEXT,
+    last_processed_sentence INTEGER DEFAULT -1,
     added_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -39,3 +40,14 @@ CREATE TABLE IF NOT EXISTS word_sources (
 
 CREATE INDEX IF NOT EXISTS idx_word_sources_source_id ON word_sources(source_id);
 CREATE INDEX IF NOT EXISTS idx_word_sources_word_id ON word_sources(word_id);
+
+CREATE TABLE IF NOT EXISTS word_contexts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    word_source_id INTEGER NOT NULL REFERENCES word_sources(id) ON DELETE CASCADE,
+    sentence TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(word_source_id, sentence)
+);
+
+CREATE INDEX IF NOT EXISTS idx_word_contexts_ws_id ON word_contexts(word_source_id);
+

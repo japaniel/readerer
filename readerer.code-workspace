@@ -8,7 +8,8 @@
 		"chat.tools.terminal.autoApprove": {
 			"git push": true,
 			"true": true,
-			"go": true
+			"go": true,
+			"sqlite3": true
 		}
 	}
 }
