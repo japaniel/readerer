@@ -103,7 +103,8 @@ func (ig *Ingester) Ingest(ctx context.Context, sourceID int64, sentences []read
 
 		for _, t := range sentence.Tokens {
 			// Filtering
-			if t.PrimaryPOS == "記号" || t.PrimaryPOS == "補助記号" || t.PrimaryPOS == "助詞" {
+			// Skip symbols, particles (助詞), and auxiliary verbs (助動詞)
+			if t.PrimaryPOS == "記号" || t.PrimaryPOS == "補助記号" || t.PrimaryPOS == "助詞" || t.PrimaryPOS == "助動詞" {
 				continue
 			}
 			if len(t.PartsOfSpeech) > 1 && t.PartsOfSpeech[1] == "数" {
@@ -142,10 +143,12 @@ func (ig *Ingester) Ingest(ctx context.Context, sourceID int64, sentences []read
 			}
 
 			// DB Operations using TX
-			wordID, err := db.CreateOrGetWord(tx, t.Surface, t.BaseForm, reading, definitions, "ja")
+			// Use BaseForm as primary word to normalize conjugations (e.g. save '書く' instead of '書い')
+			// t.BaseForm is already normalized to Surface if no lemma is found.
+			wordID, err := db.CreateOrGetWord(tx, t.BaseForm, t.BaseForm, reading, definitions, "ja")
 			if err != nil {
 				if ig.Logger != nil {
-					ig.Logger.Printf("Failed to persist word %s: %v", t.Surface, err)
+					ig.Logger.Printf("Failed to persist word %s: %v", t.BaseForm, err)
 				}
 				continue
 			}

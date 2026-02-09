@@ -38,8 +38,33 @@
   - [x] Update schema to store multiple context sentences per word-source pair (instead of overwriting).
   - [x] Limit to top 5 contexts (e.g., store as JSON array or separate table).
 
-## Phase 4: Anki Export (Deferred)
+## Phase 5: Refinement & UI
+- [x] **Fix POS Filtering and Normalization**:
+  - [x] Update `Ingester` to skip `助詞` (Particles) and `助動詞` (Aux verbs).
+  - [x] Store **Lemma/Base Form** as the primary `word` entry instead of Surface form (e.g. store `書く` not `書い`).
+  - [x] Consolidate conjugated forms under the single Lemma entry.
+- [ ] **Fix Duplicate Contexts**: Ensure we don't keep the same context sentence if a word shows up twice in the same sentence.
+- [ ] **Offline Tests**: Update tests to use local `testdata` content instead of fetching live URLs.
+- [ ] **Concurrent Processing**: Add concurrency to improve ingestion speed.
+  - [ ] Refactor `Ingest` to use a Worker Pool for intensive tasks (tokenization, lookup).
+  - [ ] Implement a smooth batch writer for SQLite.
+- [ ] **Web UI**: Create a web interface to view words (using Meteor).
+  - [ ] Create Go API server.
+  - [ ] Create Meteor frontend.
+
+## Phase 6: Anki Export (Deferred)
 - [ ] **Anki Integration**: Connect to AnkiConnect to push new cards.
+
+## Phase 7: Ebook Support (Kobo/EPUB)
+- [ ] **Local File Ingestion**: Add CLI support for ingesting local files (`-file path/to/book.epub`).
+- [ ] **EPUB Parsing**:
+  - [ ] Research Go libraries for EPUB parsing (e.g. `go-epub` or plain `archive/zip`).
+  - [ ] Implement metadata extraction (Title, Author) for the `sources` table.
+  - [ ] Implement spine iteration to process chapters in correct order.
+- [ ] **Kobo Specifics**:
+  - [ ] Handle `.kepub.epub` format quirks.
+  - [ ] Strip specific Kobo span tags and styling to ensure clean text extraction.
+- [ ] *Note: This implementation will strictly support DRM-free or pre-decrypted files.*
 
 ## Future enhancements (deferred)
 - **Web UI**: Building the frontend (Deferred in favor of CLI for MVP).
