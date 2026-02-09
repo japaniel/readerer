@@ -104,6 +104,7 @@ func (ig *Ingester) Ingest(ctx context.Context, sourceID int64, sentences []read
 		for _, t := range sentence.Tokens {
 			// Filtering
 			// Skip symbols, particles (助詞), and auxiliary verbs (助動詞)
+			// Also skip unknown POS if needed, but basic filtering helps clean up.
 			if t.PrimaryPOS == "記号" || t.PrimaryPOS == "補助記号" || t.PrimaryPOS == "助詞" || t.PrimaryPOS == "助動詞" {
 				continue
 			}
@@ -114,38 +115,40 @@ func (ig *Ingester) Ingest(ctx context.Context, sourceID int64, sentences []read
 				continue
 			}
 
+			// Normalization: Use BaseForm (Lemma) as the canonical word if available
+			wordToSave := t.Surface
+			if t.BaseForm != "" && t.BaseForm != "*" {
+				wordToSave = t.BaseForm
+			}
+
 			// Dictionary Lookup logic
 			var definitions string
-			reading := t.Reading
+			// Default reading is the token's reading (surface reading) converted to Hiragana.
+			readingToSave := dictionary.ToHiragana(t.Reading)
 
 			if ig.DictImporter != nil {
-				matches, _ := ig.DictImporter.Lookup(t.Surface, t.BaseForm, t.Reading)
+				// Lookup using the canonical word (Lemma).
+				// We pass "" for pronunciation to find the generic entry for the word,
+				// rather than trying to match the specific inflection's reading.
+				matches, _ := ig.DictImporter.Lookup(wordToSave, wordToSave, "")
 				if len(matches) > 0 {
 					d, err := dictionary.FormatDefinitions(matches)
 					if err == nil {
 						definitions = d
 					}
-					targetHiragana := dictionary.ToHiragana(t.Reading)
-					foundPreferredReading := false
-					for _, k := range matches[0].Kana {
-						if k.Text == targetHiragana {
-							reading = k.Text
-							foundPreferredReading = true
-							break
-						}
+
+					// Use the dictionary's primary reading for this Lemma.
+					// This creates clean data (e.g., 書く -> かく) instead of (書く -> かい)
+					if len(matches[0].Kana) > 0 {
+						readingToSave = matches[0].Kana[0].Text
 					}
-					if !foundPreferredReading {
-						reading = targetHiragana
-					}
-				} else {
-					reading = dictionary.ToHiragana(t.Reading)
 				}
 			}
 
 			// DB Operations using TX
 			// Use BaseForm as primary word to normalize conjugations (e.g. save '書く' instead of '書い')
 			// t.BaseForm is already normalized to Surface if no lemma is found.
-			wordID, err := db.CreateOrGetWord(tx, t.BaseForm, t.BaseForm, reading, definitions, "ja")
+			wordID, err := db.CreateOrGetWord(tx, wordToSave, t.BaseForm, readingToSave, definitions, "ja")
 			if err != nil {
 				if ig.Logger != nil {
 					ig.Logger.Printf("Failed to persist word %s: %v", t.BaseForm, err)
