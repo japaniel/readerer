@@ -38,7 +38,9 @@ func (ig *Ingester) Ingest(ctx context.Context, sourceID int64, sentences []read
 	// Check progress
 	lastProcessed, err := db.GetSourceProgress(ig.DB, sourceID)
 	if err != nil {
-		log.Printf("Warning: Failed to retrieve progress: %v", err)
+		if ig.Logger != nil {
+			ig.Logger.Printf("Warning: Failed to retrieve progress: %v", err)
+		}
 		lastProcessed = -1
 	}
 
@@ -142,13 +144,17 @@ func (ig *Ingester) Ingest(ctx context.Context, sourceID int64, sentences []read
 			// DB Operations using TX
 			wordID, err := db.CreateOrGetWord(tx, t.Surface, t.BaseForm, reading, definitions, "ja")
 			if err != nil {
-				log.Printf("Failed to persist word %s: %v", t.Surface, err)
+				if ig.Logger != nil {
+					ig.Logger.Printf("Failed to persist word %s: %v", t.Surface, err)
+				}
 				continue
 			}
 
 			err = db.LinkWordToSource(tx, wordID, sourceID, cleanSentence, cleanSentence)
 			if err != nil {
-				log.Printf("Failed to link word %d: %v", wordID, err)
+				if ig.Logger != nil {
+					ig.Logger.Printf("Failed to link word %d: %v", wordID, err)
+				}
 			} else {
 				linkCount++
 			}
@@ -157,7 +163,9 @@ func (ig *Ingester) Ingest(ctx context.Context, sourceID int64, sentences []read
 		// Checkpoint
 		if (i+1)%ig.BatchSize == 0 {
 			if err := db.UpdateSourceProgress(tx, sourceID, i); err != nil {
-				log.Printf("Warning: failed to save progress: %v", err)
+				if ig.Logger != nil {
+					ig.Logger.Printf("Warning: failed to save progress: %v", err)
+				}
 			}
 			if err := commitTx(); err != nil {
 				return linkCount, err
@@ -171,7 +179,9 @@ func (ig *Ingester) Ingest(ctx context.Context, sourceID int64, sentences []read
 	// Final commit
 	if tx != nil {
 		if err := db.UpdateSourceProgress(tx, sourceID, len(sentences)-1); err != nil {
-			log.Printf("Warning: failed to update final progress: %v", err)
+			if ig.Logger != nil {
+				ig.Logger.Printf("Warning: failed to update final progress: %v", err)
+			}
 		}
 		if err := commitTx(); err != nil {
 			return linkCount, err
