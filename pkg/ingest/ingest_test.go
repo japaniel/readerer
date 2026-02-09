@@ -95,3 +95,63 @@ func TestIngestContextCancel(t *testing.T) {
 		t.Errorf("Expected context.Canceled error, got %v", err)
 	}
 }
+
+func TestIngestNormalizationAndFiltering(t *testing.T) {
+	conn := setupDB(t)
+	defer conn.Close()
+
+	sourceID, err := db.CreateOrGetSource(conn, "test", "NormTitle", "Author", "Site", "http://norm", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tokens := []readerer.Token{
+		{Surface: "手紙", BaseForm: "手紙", Reading: "テガミ", PartsOfSpeech: []string{"名詞"}, PrimaryPOS: "名詞"},
+		{Surface: "を", BaseForm: "を", Reading: "ヲ", PartsOfSpeech: []string{"助詞"}, PrimaryPOS: "助詞"},
+		{Surface: "書い", BaseForm: "書く", Reading: "カイ", PartsOfSpeech: []string{"動詞"}, PrimaryPOS: "動詞"},
+		{Surface: "まし", BaseForm: "ます", Reading: "マシ", PartsOfSpeech: []string{"助動詞"}, PrimaryPOS: "助動詞"},
+	}
+
+	sentences := []readerer.Sentence{
+		{Text: "手紙を書いました", Tokens: tokens},
+	}
+
+	ingester := NewIngester(conn, nil)
+	count, err := ingester.Ingest(context.Background(), sourceID, sentences)
+	if err != nil {
+		t.Fatalf("Ingest failed: %v", err)
+	}
+
+	// We expect 2 words linked: "手紙" and "書く".
+	// "を" and "まし" should be filtered out.
+
+	if count != 2 {
+		t.Errorf("Expected 2 linked words, got %d", count)
+	}
+
+	// Verify DB contents
+	rows, err := conn.Query("SELECT word FROM words ORDER BY id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+
+	var words []string
+	for rows.Next() {
+		var w string
+		if err := rows.Scan(&w); err != nil {
+			t.Fatal(err)
+		}
+		words = append(words, w)
+	}
+
+	expected := []string{"手紙", "書く"}
+	if len(words) != len(expected) {
+		t.Fatalf("Expected %d words in DB, got %d: %v", len(expected), len(words), words)
+	}
+	for i, w := range words {
+		if w != expected[i] {
+			t.Errorf("Expected word %d to be %s, got %s", i, expected[i], w)
+		}
+	}
+}
