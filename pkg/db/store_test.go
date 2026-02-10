@@ -67,11 +67,11 @@ func TestLinkAndQuery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create source: %v", err)
 	}
-	if err := LinkWordToSource(db, wID, sID, "この猫は可愛い。", "この猫は可愛い。"); err != nil {
+	if err := LinkWordToSource(db, wID, sID, "この猫は可愛い。", "この猫は可愛い。", 1); err != nil {
 		t.Fatalf("link: %v", err)
 	}
 	// Link again to test occurrence_count increment via upsert
-	if err := LinkWordToSource(db, wID, sID, "この猫は可愛い。", "この猫は可愛い。"); err != nil {
+	if err := LinkWordToSource(db, wID, sID, "この猫は可愛い。", "この猫は可愛い。", 1); err != nil {
 		t.Fatalf("link 2: %v", err)
 	}
 	// verify occurrence_count
@@ -195,7 +195,7 @@ func TestGetWordsBySourceNullCols(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create source: %v", err)
 	}
-	if err := LinkWordToSource(db, wID, sID, "その魚は速い。", "その魚は速い。"); err != nil {
+	if err := LinkWordToSource(db, wID, sID, "その魚は速い。", "その魚は速い。", 1); err != nil {
 		t.Fatalf("link: %v", err)
 	}
 	words, err := GetWordsBySource(db, sID)
@@ -224,10 +224,10 @@ func TestLinkUpdatesContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create source: %v", err)
 	}
-	if err := LinkWordToSource(db, wID, sID, "最初の文。", "最初の文。"); err != nil {
+	if err := LinkWordToSource(db, wID, sID, "最初の文。", "最初の文。", 1); err != nil {
 		t.Fatalf("link: %v", err)
 	}
-	if err := LinkWordToSource(db, wID, sID, "更新された文。", "更新された文。"); err != nil {
+	if err := LinkWordToSource(db, wID, sID, "更新された文。", "更新された文。", 1); err != nil {
 		t.Fatalf("link update: %v", err)
 	}
 	var ctx, ex string
@@ -254,19 +254,19 @@ func TestLinkWordToSourceInvalidIDs(t *testing.T) {
 	defer db.Close()
 
 	// Test with invalid wordID
-	err := LinkWordToSource(db, 0, 1, "context", "example")
+	err := LinkWordToSource(db, 0, 1, "context", "example", 1)
 	if err == nil {
 		t.Fatalf("expected error for wordID <= 0")
 	}
 
 	// Test with invalid sourceID
-	err = LinkWordToSource(db, 1, 0, "context", "example")
+	err = LinkWordToSource(db, 1, 0, "context", "example", 1)
 	if err == nil {
 		t.Fatalf("expected error for sourceID <= 0")
 	}
 
 	// Test with negative wordID
-	err = LinkWordToSource(db, -1, 1, "context", "example")
+	err = LinkWordToSource(db, -1, 1, "context", "example", 1)
 	if err == nil {
 		t.Fatalf("expected error for negative wordID")
 	}
@@ -290,7 +290,7 @@ func TestDefinitionsPersistence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create source: %v", err)
 	}
-	if err := LinkWordToSource(db, wID, sID, "文脈", "例文"); err != nil {
+	if err := LinkWordToSource(db, wID, sID, "文脈", "例文", 1); err != nil {
 		t.Fatalf("link: %v", err)
 	}
 	words, err := GetWordsBySource(db, sID)
@@ -322,7 +322,7 @@ func TestLinkWordToSource_ContextLimit(t *testing.T) {
 	// Insert 7 different contexts
 	for i := 1; i <= 7; i++ {
 		ctx := fmt.Sprintf("Context sentence %d.", i)
-		err := LinkWordToSource(db, wID, sID, ctx, ctx)
+		err := LinkWordToSource(db, wID, sID, ctx, ctx, 1)
 		if err != nil {
 			t.Fatalf("link iteration %d: %v", i, err)
 		}

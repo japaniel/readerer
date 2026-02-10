@@ -101,6 +101,11 @@ func (ig *Ingester) Ingest(ctx context.Context, sourceID int64, sentences []read
 
 		cleanSentence := sentence.Text
 
+		// Aggregation maps for the current sentence
+		wordCounts := make(map[string]int)
+		wordReadings := make(map[string]string)
+		var orderedWords []string
+
 		for _, t := range sentence.Tokens {
 			// Filtering
 			// Skip symbols, particles (助詞), and auxiliary verbs (助動詞)
@@ -121,15 +126,35 @@ func (ig *Ingester) Ingest(ctx context.Context, sourceID int64, sentences []read
 				wordToSave = t.BaseForm
 			}
 
+			if _, exists := wordCounts[wordToSave]; !exists {
+				wordCounts[wordToSave] = 0
+				wordReadings[wordToSave] = dictionary.ToHiragana(t.Reading)
+				orderedWords = append(orderedWords, wordToSave)
+			} else {
+				// If the existing reading is empty but this token provides a non-empty reading,
+				// update the stored reading for this word.
+				currentReading := wordReadings[wordToSave]
+				newReading := dictionary.ToHiragana(t.Reading)
+				if currentReading == "" && newReading != "" {
+					wordReadings[wordToSave] = newReading
+				}
+			}
+			wordCounts[wordToSave]++
+		}
+
+		// Process words in the order they were first encountered in the sentence
+		// (preserve first-seen token order) to ensure deterministic behavior and
+		// stable insertion order into the DB. Avoid iterating over `wordCounts`
+		// directly because map iteration order is nondeterministic.
+		for _, wordToSave := range orderedWords {
+			count := wordCounts[wordToSave]
 			// Dictionary Lookup logic
 			var definitions string
-			// Default reading is the token's reading (surface reading) converted to Hiragana.
-			readingToSave := dictionary.ToHiragana(t.Reading)
+			// Default reading is initialized from the first token occurrence
+			readingToSave := wordReadings[wordToSave]
 
 			if ig.DictImporter != nil {
 				// Lookup using the canonical word (Lemma).
-				// We pass "" for pronunciation to find the generic entry for the word,
-				// rather than trying to match the specific inflection's reading.
 				matches, _ := ig.DictImporter.Lookup(wordToSave, wordToSave, "")
 				if len(matches) > 0 {
 					d, err := dictionary.FormatDefinitions(matches)
@@ -138,9 +163,6 @@ func (ig *Ingester) Ingest(ctx context.Context, sourceID int64, sentences []read
 					}
 
 					// Use the dictionary's primary reading for this Lemma.
-					// We deterministically pick a reading:
-					// 1. Prefer "Common" readings.
-					// 2. Fallback to the first available reading (which is now deterministic as Lookup sorts results).
 					if len(matches[0].Kana) > 0 {
 						foundReading := ""
 						// Try to find a common reading
@@ -162,7 +184,6 @@ func (ig *Ingester) Ingest(ctx context.Context, sourceID int64, sentences []read
 			// DB Operations using TX
 			// Use BaseForm as primary word to normalize conjugations (e.g. save '書く' instead of '書い')
 			// wordToSave is already normalized to BaseForm (or valid Surface if no lemma found).
-			// We use wordToSave as the lemma argument as well to avoid storing "*" or empty strings.
 			wordID, err := db.CreateOrGetWord(tx, wordToSave, wordToSave, readingToSave, definitions, "ja")
 			if err != nil {
 				if ig.Logger != nil {
@@ -171,13 +192,14 @@ func (ig *Ingester) Ingest(ctx context.Context, sourceID int64, sentences []read
 				continue
 			}
 
-			err = db.LinkWordToSource(tx, wordID, sourceID, cleanSentence, cleanSentence)
+			// Link with count
+			err = db.LinkWordToSource(tx, wordID, sourceID, cleanSentence, cleanSentence, count)
 			if err != nil {
 				if ig.Logger != nil {
 					ig.Logger.Printf("Failed to link word %d: %v", wordID, err)
 				}
 			} else {
-				linkCount++
+				linkCount += count
 			}
 		}
 
