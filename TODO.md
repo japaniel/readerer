@@ -44,7 +44,7 @@
   - [x] Store **Lemma/Base Form** as the primary `word` entry instead of Surface form (e.g. store `書く` not `書い`).
   - [x] Consolidate conjugated forms under the single Lemma entry.
 - [x] **Fix Duplicate Contexts**: Ensure we don't keep the same context sentence if a word shows up twice in the same sentence.
-- [ ] **Offline Tests**: Update tests to use local `testdata` content instead of fetching live URLs.
+- [x] **Offline Tests**: Update tests to use local `testdata` content instead of fetching live URLs.
 - [ ] **Concurrent Processing**: Add concurrency to improve ingestion speed.
   - [ ] Refactor `Ingest` to use a Worker Pool for intensive tasks (tokenization, lookup).
   - [ ] Implement a smooth batch writer for SQLite.
