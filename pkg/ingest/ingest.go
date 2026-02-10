@@ -103,7 +103,9 @@ func (ig *Ingester) Ingest(ctx context.Context, sourceID int64, sentences []read
 
 		for _, t := range sentence.Tokens {
 			// Filtering
-			if t.PrimaryPOS == "記号" || t.PrimaryPOS == "補助記号" || t.PrimaryPOS == "助詞" {
+			// Skip symbols, particles (助詞), and auxiliary verbs (助動詞)
+			// Also skip unknown POS if needed, but basic filtering helps clean up.
+			if t.PrimaryPOS == "記号" || t.PrimaryPOS == "補助記号" || t.PrimaryPOS == "助詞" || t.PrimaryPOS == "助動詞" {
 				continue
 			}
 			if len(t.PartsOfSpeech) > 1 && t.PartsOfSpeech[1] == "数" {
@@ -113,39 +115,58 @@ func (ig *Ingester) Ingest(ctx context.Context, sourceID int64, sentences []read
 				continue
 			}
 
+			// Normalization: Use BaseForm (Lemma) as the canonical word if available
+			wordToSave := t.Surface
+			if t.BaseForm != "" && t.BaseForm != "*" {
+				wordToSave = t.BaseForm
+			}
+
 			// Dictionary Lookup logic
 			var definitions string
-			reading := t.Reading
+			// Default reading is the token's reading (surface reading) converted to Hiragana.
+			readingToSave := dictionary.ToHiragana(t.Reading)
 
 			if ig.DictImporter != nil {
-				matches, _ := ig.DictImporter.Lookup(t.Surface, t.BaseForm, t.Reading)
+				// Lookup using the canonical word (Lemma).
+				// We pass "" for pronunciation to find the generic entry for the word,
+				// rather than trying to match the specific inflection's reading.
+				matches, _ := ig.DictImporter.Lookup(wordToSave, wordToSave, "")
 				if len(matches) > 0 {
 					d, err := dictionary.FormatDefinitions(matches)
 					if err == nil {
 						definitions = d
 					}
-					targetHiragana := dictionary.ToHiragana(t.Reading)
-					foundPreferredReading := false
-					for _, k := range matches[0].Kana {
-						if k.Text == targetHiragana {
-							reading = k.Text
-							foundPreferredReading = true
-							break
+
+					// Use the dictionary's primary reading for this Lemma.
+					// We deterministically pick a reading:
+					// 1. Prefer "Common" readings.
+					// 2. Fallback to the first available reading (which is now deterministic as Lookup sorts results).
+					if len(matches[0].Kana) > 0 {
+						foundReading := ""
+						// Try to find a common reading
+						for _, k := range matches[0].Kana {
+							if k.Common {
+								foundReading = k.Text
+								break
+							}
 						}
+						// If no common reading, take the first one
+						if foundReading == "" {
+							foundReading = matches[0].Kana[0].Text
+						}
+						readingToSave = dictionary.ToHiragana(foundReading)
 					}
-					if !foundPreferredReading {
-						reading = targetHiragana
-					}
-				} else {
-					reading = dictionary.ToHiragana(t.Reading)
 				}
 			}
 
 			// DB Operations using TX
-			wordID, err := db.CreateOrGetWord(tx, t.Surface, t.BaseForm, reading, definitions, "ja")
+			// Use BaseForm as primary word to normalize conjugations (e.g. save '書く' instead of '書い')
+			// wordToSave is already normalized to BaseForm (or valid Surface if no lemma found).
+			// We use wordToSave as the lemma argument as well to avoid storing "*" or empty strings.
+			wordID, err := db.CreateOrGetWord(tx, wordToSave, wordToSave, readingToSave, definitions, "ja")
 			if err != nil {
 				if ig.Logger != nil {
-					ig.Logger.Printf("Failed to persist word %s: %v", t.Surface, err)
+					ig.Logger.Printf("Failed to persist word %s: %v", wordToSave, err)
 				}
 				continue
 			}
