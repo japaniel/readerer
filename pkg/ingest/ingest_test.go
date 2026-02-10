@@ -155,3 +155,65 @@ func TestIngestNormalizationAndFiltering(t *testing.T) {
 		}
 	}
 }
+
+func TestIngestDuplicateContext(t *testing.T) {
+conn := setupDB(t)
+defer conn.Close()
+
+sourceID, err := db.CreateOrGetSource(conn, "test", "DuplicateTest", "Author", "Site", "http://dup", "")
+if err != nil {
+t.Fatal(err)
+}
+
+sentenceText := "猫は猫である"
+sentences := []readerer.Sentence{
+{
+Text: sentenceText,
+Tokens: []readerer.Token{
+{Surface: "猫", BaseForm: "猫", Reading: "ネコ", PartsOfSpeech: []string{"名詞"}, PrimaryPOS: "名詞"},
+{Surface: "は", BaseForm: "は", Reading: "ハ", PartsOfSpeech: []string{"助詞"}, PrimaryPOS: "助詞"},
+{Surface: "猫", BaseForm: "猫", Reading: "ネコ", PartsOfSpeech: []string{"名詞"}, PrimaryPOS: "名詞"},
+},
+},
+}
+
+ingester := NewIngester(conn, nil)
+ingester.BatchSize = 10
+
+countProcessed, err := ingester.Ingest(context.Background(), sourceID, sentences)
+if err != nil {
+t.Fatalf("Ingest failed: %v", err)
+}
+
+if countProcessed != 2 {
+t.Errorf("Expected 2 processed tokens, got %d", countProcessed)
+}
+
+// Helper to get counts
+var wordSourceID int64
+var count int
+err = conn.QueryRow(`
+SELECT ws.id, ws.occurrence_count 
+FROM word_sources ws 
+JOIN words w ON ws.word_id = w.id 
+WHERE w.word = '猫' AND ws.source_id = ?`, sourceID).Scan(&wordSourceID, &count)
+
+if err != nil {
+t.Fatalf("Failed to query word_sources: %v", err)
+}
+
+if count != 2 {
+t.Errorf("Expected occurrence_count 2 for '猫', got %d", count)
+}
+
+// Check contexts
+var contextCount int
+err = conn.QueryRow(`SELECT COUNT(*) FROM word_contexts WHERE word_source_id = ?`, wordSourceID).Scan(&contextCount)
+if err != nil {
+t.Fatalf("Failed to query word_contexts: %v", err)
+}
+
+if contextCount != 1 {
+t.Errorf("Expected 1 context sentence, got %d", contextCount)
+}
+}

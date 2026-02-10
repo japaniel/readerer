@@ -100,7 +100,10 @@ func (ig *Ingester) Ingest(ctx context.Context, sourceID int64, sentences []read
 		}
 
 		cleanSentence := sentence.Text
-		wordCache := make(map[string]int64)
+		
+		// Aggregation maps for the current sentence
+		wordCounts := make(map[string]int)
+		wordReadings := make(map[string]string)
 
 		for _, t := range sentence.Tokens {
 			// Filtering
@@ -121,73 +124,67 @@ func (ig *Ingester) Ingest(ctx context.Context, sourceID int64, sentences []read
 			if t.BaseForm != "" && t.BaseForm != "*" {
 				wordToSave = t.BaseForm
 			}
+			
+			if _, exists := wordCounts[wordToSave]; !exists {
+				wordCounts[wordToSave] = 0
+				wordReadings[wordToSave] = dictionary.ToHiragana(t.Reading)
+			}
+			wordCounts[wordToSave]++
+		}
 
-			var wordID int64
-			var err error
+		for wordToSave, count := range wordCounts {
+			// Dictionary Lookup logic
+			var definitions string
+			// Default reading is initialized from the first token occurrence
+			readingToSave := wordReadings[wordToSave]
 
-			// Optimization: Check if we've already processed this word in this sentence
-			if cachedID, ok := wordCache[wordToSave]; ok {
-				wordID = cachedID
-			} else {
-				// Dictionary Lookup logic
-				var definitions string
-				// Default reading is the token's reading (surface reading) converted to Hiragana.
-				readingToSave := dictionary.ToHiragana(t.Reading)
+			if ig.DictImporter != nil {
+				// Lookup using the canonical word (Lemma).
+				matches, _ := ig.DictImporter.Lookup(wordToSave, wordToSave, "")
+				if len(matches) > 0 {
+					d, err := dictionary.FormatDefinitions(matches)
+					if err == nil {
+						definitions = d
+					}
 
-				if ig.DictImporter != nil {
-					// Lookup using the canonical word (Lemma).
-					// We pass "" for pronunciation to find the generic entry for the word,
-					// rather than trying to match the specific inflection's reading.
-					matches, _ := ig.DictImporter.Lookup(wordToSave, wordToSave, "")
-					if len(matches) > 0 {
-						d, err := dictionary.FormatDefinitions(matches)
-						if err == nil {
-							definitions = d
-						}
-
-						// Use the dictionary's primary reading for this Lemma.
-						// We deterministically pick a reading:
-						// 1. Prefer "Common" readings.
-						// 2. Fallback to the first available reading (which is now deterministic as Lookup sorts results).
-						if len(matches[0].Kana) > 0 {
-							foundReading := ""
-							// Try to find a common reading
-							for _, k := range matches[0].Kana {
-								if k.Common {
-									foundReading = k.Text
-									break
-								}
+					// Use the dictionary's primary reading for this Lemma.
+					if len(matches[0].Kana) > 0 {
+						foundReading := ""
+						// Try to find a common reading
+						for _, k := range matches[0].Kana {
+							if k.Common {
+								foundReading = k.Text
+								break
 							}
-							// If no common reading, take the first one
-							if foundReading == "" {
-								foundReading = matches[0].Kana[0].Text
-							}
-							readingToSave = dictionary.ToHiragana(foundReading)
 						}
+						// If no common reading, take the first one
+						if foundReading == "" {
+							foundReading = matches[0].Kana[0].Text
+						}
+						readingToSave = dictionary.ToHiragana(foundReading)
 					}
 				}
-
-				// DB Operations using TX
-				// Use BaseForm as primary word to normalize conjugations (e.g. save '書く' instead of '書い')
-				// wordToSave is already normalized to BaseForm (or valid Surface if no lemma found).
-				// We use wordToSave as the lemma argument as well to avoid storing "*" or empty strings.
-				wordID, err = db.CreateOrGetWord(tx, wordToSave, wordToSave, readingToSave, definitions, "ja")
-				if err != nil {
-					if ig.Logger != nil {
-						ig.Logger.Printf("Failed to persist word %s: %v", wordToSave, err)
-					}
-					continue
-				}
-				wordCache[wordToSave] = wordID
 			}
 
-			err = db.LinkWordToSource(tx, wordID, sourceID, cleanSentence, cleanSentence)
+			// DB Operations using TX
+			// Use BaseForm as primary word to normalize conjugations (e.g. save '書く' instead of '書い')
+			// wordToSave is already normalized to BaseForm (or valid Surface if no lemma found).
+			wordID, err := db.CreateOrGetWord(tx, wordToSave, wordToSave, readingToSave, definitions, "ja")
+			if err != nil {
+				if ig.Logger != nil {
+					ig.Logger.Printf("Failed to persist word %s: %v", wordToSave, err)
+				}
+				continue
+			}
+
+			// Link with count
+			err = db.LinkWordToSource(tx, wordID, sourceID, cleanSentence, cleanSentence, count)
 			if err != nil {
 				if ig.Logger != nil {
 					ig.Logger.Printf("Failed to link word %d: %v", wordID, err)
 				}
 			} else {
-				linkCount++
+				linkCount += count
 			}
 		}
 

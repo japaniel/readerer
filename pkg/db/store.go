@@ -91,22 +91,26 @@ func CreateOrGetSource(db DBExecutor, sourceType, title, author, website, url, m
 }
 
 // LinkWordToSource links the word and source, creating or updating an entry in word_sources.
-func LinkWordToSource(db DBExecutor, wordID, sourceID int64, context, example string) error {
+func LinkWordToSource(db DBExecutor, wordID, sourceID int64, context, example string, incrementAmount int) error {
 	if wordID <= 0 {
 		return fmt.Errorf("wordID must be positive")
 	}
 	if sourceID <= 0 {
 		return fmt.Errorf("sourceID must be positive")
 	}
+	if incrementAmount < 1 {
+		incrementAmount = 1
+	}
 	// Use SQLite UPSERT to atomically insert or update occurrence_count and context/example
 	var wordSourceID int64
+	// occurrence_count init value is incrementAmount
 	err := db.QueryRow(`INSERT INTO word_sources (word_id, source_id, context_sentence, example_sentence, occurrence_count, first_seen_at)
-	VALUES (?, ?, ?, ?, 1, ?)
+	VALUES (?, ?, ?, ?, ?, ?)
 	ON CONFLICT(word_id, source_id) DO UPDATE SET
-	  occurrence_count = word_sources.occurrence_count + 1,
+	  occurrence_count = word_sources.occurrence_count + excluded.occurrence_count,
 	  context_sentence = excluded.context_sentence,
 	  example_sentence = excluded.example_sentence
-	RETURNING id`, wordID, sourceID, context, example, time.Now()).Scan(&wordSourceID)
+	RETURNING id`, wordID, sourceID, context, example, incrementAmount, time.Now()).Scan(&wordSourceID)
 	if err != nil {
 		return err
 	}
