@@ -100,7 +100,7 @@ func (ig *Ingester) Ingest(ctx context.Context, sourceID int64, sentences []read
 		}
 
 		cleanSentence := sentence.Text
-		
+
 		// Aggregation maps for the current sentence
 		wordCounts := make(map[string]int)
 		wordReadings := make(map[string]string)
@@ -124,7 +124,7 @@ func (ig *Ingester) Ingest(ctx context.Context, sourceID int64, sentences []read
 			if t.BaseForm != "" && t.BaseForm != "*" {
 				wordToSave = t.BaseForm
 			}
-			
+
 			if _, exists := wordCounts[wordToSave]; !exists {
 				wordCounts[wordToSave] = 0
 				wordReadings[wordToSave] = dictionary.ToHiragana(t.Reading)
