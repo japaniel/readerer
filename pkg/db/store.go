@@ -99,7 +99,7 @@ func LinkWordToSource(db DBExecutor, wordID, sourceID int64, context, example st
 		return fmt.Errorf("sourceID must be positive")
 	}
 	if incrementAmount < 1 {
-		incrementAmount = 1
+		return fmt.Errorf("incrementAmount must be positive, got %d", incrementAmount)
 	}
 	// Use SQLite UPSERT to atomically insert or update occurrence_count and context/example
 	var wordSourceID int64

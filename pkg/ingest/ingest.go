@@ -130,6 +130,14 @@ func (ig *Ingester) Ingest(ctx context.Context, sourceID int64, sentences []read
 				wordCounts[wordToSave] = 0
 				wordReadings[wordToSave] = dictionary.ToHiragana(t.Reading)
 				orderedWords = append(orderedWords, wordToSave)
+			} else {
+				// If the existing reading is empty but this token provides a non-empty reading,
+				// update the stored reading for this word.
+				currentReading := wordReadings[wordToSave]
+				newReading := dictionary.ToHiragana(t.Reading)
+				if currentReading == "" && newReading != "" {
+					wordReadings[wordToSave] = newReading
+				}
 			}
 			wordCounts[wordToSave]++
 		}
