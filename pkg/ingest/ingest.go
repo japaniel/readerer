@@ -104,6 +104,7 @@ func (ig *Ingester) Ingest(ctx context.Context, sourceID int64, sentences []read
 		// Aggregation maps for the current sentence
 		wordCounts := make(map[string]int)
 		wordReadings := make(map[string]string)
+		var orderedWords []string
 
 		for _, t := range sentence.Tokens {
 			// Filtering
@@ -128,11 +129,13 @@ func (ig *Ingester) Ingest(ctx context.Context, sourceID int64, sentences []read
 			if _, exists := wordCounts[wordToSave]; !exists {
 				wordCounts[wordToSave] = 0
 				wordReadings[wordToSave] = dictionary.ToHiragana(t.Reading)
+				orderedWords = append(orderedWords, wordToSave)
 			}
 			wordCounts[wordToSave]++
 		}
 
-		for wordToSave, count := range wordCounts {
+		for _, wordToSave := range orderedWords {
+			count := wordCounts[wordToSave]
 			// Dictionary Lookup logic
 			var definitions string
 			// Default reading is initialized from the first token occurrence
