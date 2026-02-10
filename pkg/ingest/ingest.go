@@ -134,6 +134,10 @@ func (ig *Ingester) Ingest(ctx context.Context, sourceID int64, sentences []read
 			wordCounts[wordToSave]++
 		}
 
+		// Process words in the order they were first encountered in the sentence
+		// (preserve first-seen token order) to ensure deterministic behavior and
+		// stable insertion order into the DB. Avoid iterating over `wordCounts`
+		// directly because map iteration order is nondeterministic.
 		for _, wordToSave := range orderedWords {
 			count := wordCounts[wordToSave]
 			// Dictionary Lookup logic

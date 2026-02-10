@@ -157,63 +157,118 @@ func TestIngestNormalizationAndFiltering(t *testing.T) {
 }
 
 func TestIngestDuplicateContext(t *testing.T) {
-conn := setupDB(t)
-defer conn.Close()
+	conn := setupDB(t)
+	defer conn.Close()
 
-sourceID, err := db.CreateOrGetSource(conn, "test", "DuplicateTest", "Author", "Site", "http://dup", "")
-if err != nil {
-t.Fatal(err)
-}
+	sourceID, err := db.CreateOrGetSource(conn, "test", "DuplicateTest", "Author", "Site", "http://dup", "")
+	if err != nil {
+		t.Fatal(err)
+	}
 
-sentenceText := "猫は猫である"
-sentences := []readerer.Sentence{
-{
-Text: sentenceText,
-Tokens: []readerer.Token{
-{Surface: "猫", BaseForm: "猫", Reading: "ネコ", PartsOfSpeech: []string{"名詞"}, PrimaryPOS: "名詞"},
-{Surface: "は", BaseForm: "は", Reading: "ハ", PartsOfSpeech: []string{"助詞"}, PrimaryPOS: "助詞"},
-{Surface: "猫", BaseForm: "猫", Reading: "ネコ", PartsOfSpeech: []string{"名詞"}, PrimaryPOS: "名詞"},
-},
-},
-}
+	sentenceText := "猫は猫である"
+	sentences := []readerer.Sentence{
+		{
+			Text: sentenceText,
+			Tokens: []readerer.Token{
+				{Surface: "猫", BaseForm: "猫", Reading: "ネコ", PartsOfSpeech: []string{"名詞"}, PrimaryPOS: "名詞"},
+				{Surface: "は", BaseForm: "は", Reading: "ハ", PartsOfSpeech: []string{"助詞"}, PrimaryPOS: "助詞"},
+				{Surface: "猫", BaseForm: "猫", Reading: "ネコ", PartsOfSpeech: []string{"名詞"}, PrimaryPOS: "名詞"},
+			},
+		},
+	}
 
-ingester := NewIngester(conn, nil)
-ingester.BatchSize = 10
+	ingester := NewIngester(conn, nil)
+	ingester.BatchSize = 10
 
-countProcessed, err := ingester.Ingest(context.Background(), sourceID, sentences)
-if err != nil {
-t.Fatalf("Ingest failed: %v", err)
-}
+	countProcessed, err := ingester.Ingest(context.Background(), sourceID, sentences)
+	if err != nil {
+		t.Fatalf("Ingest failed: %v", err)
+	}
 
-if countProcessed != 2 {
-t.Errorf("Expected 2 processed tokens, got %d", countProcessed)
-}
+	if countProcessed != 2 {
+		t.Errorf("Expected 2 processed tokens, got %d", countProcessed)
+	}
 
-// Helper to get counts
-var wordSourceID int64
-var count int
-err = conn.QueryRow(`
+	// Helper to get counts
+	var wordSourceID int64
+	var count int
+	err = conn.QueryRow(`
 SELECT ws.id, ws.occurrence_count 
 FROM word_sources ws 
 JOIN words w ON ws.word_id = w.id 
 WHERE w.word = '猫' AND ws.source_id = ?`, sourceID).Scan(&wordSourceID, &count)
 
-if err != nil {
-t.Fatalf("Failed to query word_sources: %v", err)
+	if err != nil {
+		t.Fatalf("Failed to query word_sources: %v", err)
+	}
+
+	if count != 2 {
+		t.Errorf("Expected occurrence_count 2 for '猫', got %d", count)
+	}
+
+	// Check contexts
+	var contextCount int
+	err = conn.QueryRow(`SELECT COUNT(*) FROM word_contexts WHERE word_source_id = ?`, wordSourceID).Scan(&contextCount)
+	if err != nil {
+		t.Fatalf("Failed to query word_contexts: %v", err)
+	}
+
+	if contextCount != 1 {
+		t.Errorf("Expected 1 context sentence, got %d", contextCount)
+	}
 }
 
-if count != 2 {
-t.Errorf("Expected occurrence_count 2 for '猫', got %d", count)
-}
+func TestIngestDeterministicOrder(t *testing.T) {
+	conn := setupDB(t)
+	defer conn.Close()
 
-// Check contexts
-var contextCount int
-err = conn.QueryRow(`SELECT COUNT(*) FROM word_contexts WHERE word_source_id = ?`, wordSourceID).Scan(&contextCount)
-if err != nil {
-t.Fatalf("Failed to query word_contexts: %v", err)
-}
+	sourceID, err := db.CreateOrGetSource(conn, "test", "OrderTest", "Author", "Site", "http://order", "")
+	if err != nil {
+		t.Fatal(err)
+	}
 
-if contextCount != 1 {
-t.Errorf("Expected 1 context sentence, got %d", contextCount)
-}
+	sentences := []readerer.Sentence{
+		{
+			Text: "猫犬猫鳥",
+			Tokens: []readerer.Token{
+				{Surface: "猫", BaseForm: "猫", Reading: "ネコ", PartsOfSpeech: []string{"名詞"}, PrimaryPOS: "名詞"},
+				{Surface: "犬", BaseForm: "犬", Reading: "イヌ", PartsOfSpeech: []string{"名詞"}, PrimaryPOS: "名詞"},
+				{Surface: "猫", BaseForm: "猫", Reading: "ネコ", PartsOfSpeech: []string{"名詞"}, PrimaryPOS: "名詞"},
+				{Surface: "鳥", BaseForm: "鳥", Reading: "トリ", PartsOfSpeech: []string{"名詞"}, PrimaryPOS: "名詞"},
+			},
+		},
+	}
+
+	ingester := NewIngester(conn, nil)
+	ingester.BatchSize = 10
+
+	_, err = ingester.Ingest(context.Background(), sourceID, sentences)
+	if err != nil {
+		t.Fatalf("Ingest failed: %v", err)
+	}
+
+	rows, err := conn.Query("SELECT word FROM words ORDER BY id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+
+	var words []string
+	for rows.Next() {
+		var w string
+		if err := rows.Scan(&w); err != nil {
+			t.Fatal(err)
+		}
+		words = append(words, w)
+	}
+
+	expected := []string{"猫", "犬", "鳥"}
+	if len(words) != len(expected) {
+		t.Fatalf("Expected %d words, got %d: %v", len(expected), len(words), words)
+	}
+	for i := range expected {
+		if words[i] != expected[i] {
+			t.Errorf("Expected word %d to be %s, got %s", i, expected[i], words[i])
+		}
+	}
 }
