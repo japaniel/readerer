@@ -147,11 +147,12 @@ func (ig *Ingester) Ingest(ctx context.Context, sourceID int64, sentences []read
 
 			// DB Operations using TX
 			// Use BaseForm as primary word to normalize conjugations (e.g. save '書く' instead of '書い')
-			// t.BaseForm is already normalized to Surface if no lemma is found.
-			wordID, err := db.CreateOrGetWord(tx, wordToSave, t.BaseForm, readingToSave, definitions, "ja")
+			// wordToSave is already normalized to BaseForm (or valid Surface if no lemma found).
+			// We use wordToSave as the lemma argument as well to avoid storing "*" or empty strings.
+			wordID, err := db.CreateOrGetWord(tx, wordToSave, wordToSave, readingToSave, definitions, "ja")
 			if err != nil {
 				if ig.Logger != nil {
-					ig.Logger.Printf("Failed to persist word %s: %v", t.BaseForm, err)
+					ig.Logger.Printf("Failed to persist word %s: %v", wordToSave, err)
 				}
 				continue
 			}
