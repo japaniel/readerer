@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"log"
+	"sort"
 
 	"github.com/japaniel/readerer/pkg/db"
 )
@@ -144,6 +145,12 @@ func (im *Importer) findMatches(word, lemma, pronunciation string) []JMdictEntry
 			results = append(results, entry)
 		}
 	}
+
+	// Sort results deterministically to ensure consistent behavior.
+	// Primary: Entry ID.
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Id < results[j].Id
+	})
 
 	return results
 }

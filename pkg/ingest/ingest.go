@@ -138,9 +138,23 @@ func (ig *Ingester) Ingest(ctx context.Context, sourceID int64, sentences []read
 					}
 
 					// Use the dictionary's primary reading for this Lemma.
-					// This creates clean data (e.g., 書く -> かく) instead of (書く -> かい)
+					// We deterministically pick a reading:
+					// 1. Prefer "Common" readings.
+					// 2. Fallback to the first available reading (which is now deterministic as Lookup sorts results).
 					if len(matches[0].Kana) > 0 {
-						readingToSave = matches[0].Kana[0].Text
+						foundReading := ""
+						// Try to find a common reading
+						for _, k := range matches[0].Kana {
+							if k.Common {
+								foundReading = k.Text
+								break
+							}
+						}
+						// If no common reading, take the first one
+						if foundReading == "" {
+							foundReading = matches[0].Kana[0].Text
+						}
+						readingToSave = dictionary.ToHiragana(foundReading)
 					}
 				}
 			}
