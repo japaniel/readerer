@@ -12,7 +12,7 @@
     "GOPATH": "/workspace/.gopath",
     "GOMODCACHE": "/workspace/.gopath/pkg/mod",
     "GOPROXY": "https://proxy.golang.org,direct",
-    "SSH_AUTH_SOCK": ""
+    "SSH_AUTH_SOCK": "/run/keeper-ssh-agent.sock"
   },
   "customizations": {
     "vscode": {
@@ -30,7 +30,8 @@
     }
   },
   "mounts": [
-    "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached"
+    "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+    "source=${localEnv:SSH_AUTH_SOCK},target=/run/keeper-ssh-agent.sock,type=bind"
   ],
   "workspaceFolder": "/workspace"
 }
