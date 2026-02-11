@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -38,19 +39,30 @@ func TestCLI_OfflineServer(t *testing.T) {
 
 	// Create a dummy dictionary file in tmp dir to avoid network downloads
 	dictFile := filepath.Join(tmp, "jmdict-eng-common.json")
-	if err := os.WriteFile(dictFile, []byte("{}"), 0644); err != nil {
+	// Write a minimal valid JSON array so the dictionary loader succeeds without warnings.
+	if err := os.WriteFile(dictFile, []byte("[]"), 0644); err != nil {
 		t.Fatalf("failed to write dict placeholder: %v", err)
 	}
 
 	// Paths for binary and DB
 	dbPath := filepath.Join(tmp, "readerer.db")
-	bin := filepath.Join(tmp, "readerer.bin")
+	// Ensure the binary name includes the OS executable suffix (e.g., .exe on Windows)
+	exeSuffix := ""
+	if runtime.GOOS == "windows" {
+		exeSuffix = ".exe"
+	}
+	bin := filepath.Join(tmp, "readerer"+exeSuffix)
 
-	// Build the CLI binary (use full import path so it builds correctly regardless of the current working directory)
-	build := exec.Command("go", "build", "-o", bin, "github.com/japaniel/readerer/cmd/readerer")
+	// Build the CLI binary with a cancellable context so a stuck toolchain doesn't hang the test.
+	buildCtx, buildCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer buildCancel()
+	build := exec.CommandContext(buildCtx, "go", "build", "-o", bin, "github.com/japaniel/readerer/cmd/readerer")
 	build.Stdout = os.Stdout
 	build.Stderr = os.Stderr
 	if err := build.Run(); err != nil {
+		if buildCtx.Err() == context.DeadlineExceeded {
+			t.Fatalf("go build timed out")
+		}
 		t.Fatalf("failed to build CLI: %v", err)
 	}
 
