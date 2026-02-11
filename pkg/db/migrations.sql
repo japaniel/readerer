@@ -26,12 +26,21 @@ CREATE TABLE IF NOT EXISTS sources (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_sources_unique ON sources(url, title, author);
 
+-- Legacy, text-based `word_sources` columns removed; keep migration SQL focused
+-- on final, id-based schema. Upgrades from older DBs are not handled here.
+
+CREATE TABLE IF NOT EXISTS sentences (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    text TEXT NOT NULL UNIQUE,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS word_sources (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     word_id INTEGER NOT NULL REFERENCES words(id) ON DELETE CASCADE,
     source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
-    context_sentence TEXT,
-    example_sentence TEXT,
+    context_sentence_id INTEGER REFERENCES sentences(id) ON DELETE SET NULL,
+    example_sentence_id INTEGER REFERENCES sentences(id) ON DELETE SET NULL,
     occurrence_count INTEGER DEFAULT 1,
     first_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     is_primary INTEGER DEFAULT 0,
@@ -44,82 +53,10 @@ CREATE INDEX IF NOT EXISTS idx_word_sources_word_id ON word_sources(word_id);
 CREATE TABLE IF NOT EXISTS word_contexts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     word_source_id INTEGER NOT NULL REFERENCES word_sources(id) ON DELETE CASCADE,
-    sentence TEXT NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(word_source_id, sentence)
-);
-
-CREATE INDEX IF NOT EXISTS idx_word_contexts_ws_id ON word_contexts(word_source_id);
-
--- New sentences table to deduplicate repeated sentences across tables
-CREATE TABLE IF NOT EXISTS sentences (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    text TEXT NOT NULL UNIQUE,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
--- Seed the `sentences` table from existing sentence-like columns so that
--- subsequent conversion queries can resolve sentence IDs when upgrading an
--- existing database. On a fresh database, these inserts are effectively no-ops.
--- Trim and skip empty strings to avoid inserting blank entries which would
--- otherwise cause unresolved NULL IDs during the conversion step.
-INSERT OR IGNORE INTO sentences(text)
-    SELECT DISTINCT TRIM(context_sentence) AS text
-    FROM word_sources
-    WHERE IFNULL(TRIM(context_sentence), '') <> '';
-
-INSERT OR IGNORE INTO sentences(text)
-    SELECT DISTINCT TRIM(example_sentence) AS text
-    FROM word_sources
-    WHERE IFNULL(TRIM(example_sentence), '') <> '';
-
-INSERT OR IGNORE INTO sentences(text)
-    SELECT DISTINCT TRIM(sentence) AS text
-    FROM word_contexts
-    WHERE IFNULL(TRIM(sentence), '') <> '';
-
--- Create new tables that reference sentences by id
-CREATE TABLE IF NOT EXISTS new_word_sources (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    word_id INTEGER NOT NULL REFERENCES words(id) ON DELETE CASCADE,
-    source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
-    context_sentence_id INTEGER REFERENCES sentences(id) ON DELETE SET NULL,
-    example_sentence_id INTEGER REFERENCES sentences(id) ON DELETE SET NULL,
-    occurrence_count INTEGER DEFAULT 1,
-    first_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    is_primary INTEGER DEFAULT 0,
-    UNIQUE(word_id, source_id)
-);
-
--- Copy existing word_sources rows, resolving sentence ids
-INSERT OR IGNORE INTO new_word_sources (id, word_id, source_id, context_sentence_id, example_sentence_id, occurrence_count, first_seen_at, is_primary)
-SELECT ws.id, ws.word_id, ws.source_id,
-  (SELECT id FROM sentences s WHERE s.text = ws.context_sentence),
-  (SELECT id FROM sentences s WHERE s.text = ws.example_sentence),
-  ws.occurrence_count, ws.first_seen_at, ws.is_primary
-FROM word_sources ws;
-
-CREATE TABLE IF NOT EXISTS new_word_contexts (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    word_source_id INTEGER NOT NULL REFERENCES new_word_sources(id) ON DELETE CASCADE,
     sentence_id INTEGER NOT NULL REFERENCES sentences(id) ON DELETE CASCADE,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(word_source_id, sentence_id)
 );
 
--- Copy existing contexts resolving sentence ids
-INSERT OR IGNORE INTO new_word_contexts (id, word_source_id, sentence_id, created_at)
-SELECT wc.id, wc.word_source_id, (SELECT id FROM sentences s WHERE s.text = wc.sentence), wc.created_at
-FROM word_contexts wc;
-
--- Replace old tables with new ones
-DROP TABLE IF EXISTS word_contexts;
-DROP TABLE IF EXISTS word_sources;
-ALTER TABLE new_word_sources RENAME TO word_sources;
-ALTER TABLE new_word_contexts RENAME TO word_contexts;
-
--- Recreate indexes
-CREATE INDEX IF NOT EXISTS idx_word_sources_source_id ON word_sources(source_id);
-CREATE INDEX IF NOT EXISTS idx_word_sources_word_id ON word_sources(word_id);
 CREATE INDEX IF NOT EXISTS idx_word_contexts_ws_id ON word_contexts(word_source_id);
 

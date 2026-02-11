@@ -30,6 +30,10 @@ func InitDB(db *sql.DB) error {
 		return fmt.Errorf("failed to migrate schema: %w", err)
 	}
 
+	// No runtime conversion performed here; we assume a fresh DB is created
+	// on startup. If upgrade support is added later, implement a guarded
+	// migration with explicit schema checks and tests.
+
 	return nil
 }
 
