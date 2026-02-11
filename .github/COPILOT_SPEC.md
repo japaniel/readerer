@@ -74,6 +74,7 @@ summary: "Ingest Japanese articles/ebooks, detect unknown words/phrases, extract
   - Sentence boundary detection (context extraction).
   - Dictionary lookup (JMdict/KANJIDIC).
 - Persistence layer: SQLite storing `Words`, `Sources`, and `WordSources` (context).
+- Concurrency & Batching: implement a **WorkerPool** to parallelize CPU-bound tasks (tokenization and dictionary lookup) and a **BatchWriter** to group DB writes into efficient transactional batches. Ensure deterministic checkpointing per-source, graceful shutdown/flush semantics, and comprehensive unit/integration tests. Acceptance criteria: scaffolding and unit tests present; integration refactor and DB-backed transactional batching should yield measurable throughput improvements (target: process a 2k–5k word article in <30s on commodity hardware; add benchmarks to validate).
 - Candidate selector: unknown detection, frequency filters, POS/script heuristics.
 - Phrase detector: n-grams + PMI + POS heuristics.
 - UI: inline reader, candidate list, card editor.
@@ -164,7 +165,7 @@ Note: AnkiWeb has no public write API; pushing to AnkiWeb requires syncing from 
 ## Roadmap & Milestones 📅
 
 1. Weeks 0–2: Project scaffold in **Go** (`go mod`), CLI and core services, text importers, MeCab integration (Go bindings or subprocess), and local SQLite DB.
-2. Weeks 3–6: Unknown detection, candidate UI, AnkiConnect integration (MVP).
+2. Weeks 3–6: Unknown detection, candidate UI, AnkiConnect integration (MVP); **add concurrency improvements (WorkerPool + BatchWriter), benchmarks, and refactor `Ingester` to use concurrent processing to meet performance targets**.
 3. Weeks 7–10: Phrase extraction, example ranking, `.apkg` export (Go exporter or external tool).
 4. Later: Kindle support, TTS, automatic translations, reader apps.
 
