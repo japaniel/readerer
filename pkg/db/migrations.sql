@@ -61,20 +61,22 @@ CREATE TABLE IF NOT EXISTS sentences (
 -- Seed the `sentences` table from existing sentence-like columns so that
 -- subsequent conversion queries can resolve sentence IDs when upgrading an
 -- existing database. On a fresh database, these inserts are effectively no-ops.
+-- Trim and skip empty strings to avoid inserting blank entries which would
+-- otherwise cause unresolved NULL IDs during the conversion step.
 INSERT OR IGNORE INTO sentences(text)
-    SELECT DISTINCT context_sentence
+    SELECT DISTINCT TRIM(context_sentence) AS text
     FROM word_sources
-    WHERE context_sentence IS NOT NULL;
+    WHERE IFNULL(TRIM(context_sentence), '') <> '';
 
 INSERT OR IGNORE INTO sentences(text)
-    SELECT DISTINCT example_sentence
+    SELECT DISTINCT TRIM(example_sentence) AS text
     FROM word_sources
-    WHERE example_sentence IS NOT NULL;
+    WHERE IFNULL(TRIM(example_sentence), '') <> '';
 
 INSERT OR IGNORE INTO sentences(text)
-    SELECT DISTINCT sentence
+    SELECT DISTINCT TRIM(sentence) AS text
     FROM word_contexts
-    WHERE sentence IS NOT NULL;
+    WHERE IFNULL(TRIM(sentence), '') <> '';
 
 -- Create new tables that reference sentences by id
 CREATE TABLE IF NOT EXISTS new_word_sources (
