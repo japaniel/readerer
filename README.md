@@ -32,3 +32,8 @@ If interrupted, running the command again will **resume** from where it left off
 Prerequisites:
 - Go 1.24+
 - (Optional) Dev Container included.
+
+### Concurrency & worker pool 🔧
+
+- The `WorkerPool` runs jobs with a fixed number of goroutines and supports graceful shutdown via the `context.Context` passed to `Start(ctx)`. Canceling that context causes workers to exit promptly.
+- `Submit` may block if the job queue is full and now recovers from a send-on-closed-channel race, returning `ErrPoolClosed` if the pool is closed concurrently. Use `SubmitCtx(ctx, job)` if you need to cancel while waiting to enqueue.

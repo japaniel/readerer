@@ -257,39 +257,39 @@ func TestReadabilityFuriganaHandling(t *testing.T) {
 }
 
 func TestSanitizeRuby(t *testing.T) {
-tests := []struct {
-name     string
-input    string
-expected string
-}{
-{
-name:     "Simple Ruby",
-input:    "<ruby>漢字<rt>かんじ</rt></ruby>",
-expected: "<ruby>漢字</ruby>",
-},
-{
-name:     "Ruby with RP",
-input:    "<ruby>漢字<rp>(</rp><rt>かんじ</rt><rp>)</rp></ruby>",
-expected: "<ruby>漢字</ruby>",
-},
-{
-name:     "Multiple Ruby",
-input:    "<ruby>私<rt>わたし</rt></ruby>は<ruby>猫<rt>ねこ</rt></ruby>である",
-expected: "<ruby>私</ruby>は<ruby>猫</ruby>である",
-},
-{
-name:     "Attributes in tags",
-input:    "<ruby class='test'>漢字<rt class='reading'>かんじ</rt></ruby>",
-expected: "<ruby class='test'>漢字</ruby>",
-},
-}
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "Simple Ruby",
+			input:    "<ruby>漢字<rt>かんじ</rt></ruby>",
+			expected: "<ruby>漢字</ruby>",
+		},
+		{
+			name:     "Ruby with RP",
+			input:    "<ruby>漢字<rp>(</rp><rt>かんじ</rt><rp>)</rp></ruby>",
+			expected: "<ruby>漢字</ruby>",
+		},
+		{
+			name:     "Multiple Ruby",
+			input:    "<ruby>私<rt>わたし</rt></ruby>は<ruby>猫<rt>ねこ</rt></ruby>である",
+			expected: "<ruby>私</ruby>は<ruby>猫</ruby>である",
+		},
+		{
+			name:     "Attributes in tags",
+			input:    "<ruby class='test'>漢字<rt class='reading'>かんじ</rt></ruby>",
+			expected: "<ruby class='test'>漢字</ruby>",
+		},
+	}
 
-for _, tt := range tests {
-t.Run(tt.name, func(t *testing.T) {
-result := SanitizeRuby([]byte(tt.input))
-if string(result) != tt.expected {
-t.Errorf("got %q, want %q", string(result), tt.expected)
-}
-})
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := SanitizeRuby([]byte(tt.input))
+			if string(result) != tt.expected {
+				t.Errorf("got %q, want %q", string(result), tt.expected)
+			}
+		})
+	}
 }

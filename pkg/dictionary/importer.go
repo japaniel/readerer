@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"sort"
+	"sync"
 
 	"github.com/japaniel/readerer/pkg/db"
 )
@@ -14,6 +15,10 @@ type Importer struct {
 	conn *sql.DB
 	// Maps to speed up lookups.
 	// Key: string (Kanji or Kana), Value: List of matching JMdictEntry
+	// Note: `index` is read concurrently by multiple goroutines; guard reads with `mu` to
+	// protect against future code that might mutate the map. If the index is never
+	// mutated after creation this is a no-op, but the mutex provides safety for later changes.
+	mu    sync.RWMutex
 	index map[string][]JMdictEntry
 }
 
@@ -128,7 +133,10 @@ func (im *Importer) findMatches(word, lemma, pronunciation string) []JMdictEntry
 		if term == "" {
 			return
 		}
-		if entries, ok := im.index[term]; ok {
+		im.mu.RLock()
+		entries, ok := im.index[term]
+		im.mu.RUnlock()
+		if ok {
 			for _, e := range entries {
 				candidates[e.Id] = e
 			}

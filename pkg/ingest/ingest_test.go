@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"testing"
+	"time"
 
 	"github.com/japaniel/readerer/pkg/db"
 	"github.com/japaniel/readerer/pkg/readerer"
@@ -270,5 +271,49 @@ func TestIngestDeterministicOrder(t *testing.T) {
 		if words[i] != expected[i] {
 			t.Errorf("Expected word %d to be %s, got %s", i, expected[i], words[i])
 		}
+	}
+}
+
+func TestIngestEarlyCancellationDoesNotDeadlock(t *testing.T) {
+	conn := setupDB(t)
+	defer conn.Close()
+
+	sourceID, err := db.CreateOrGetSource(conn, "test", "CancelTest", "", "", "http://cancel", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Prepare many sentences so ingestion would normally take some time
+	sentences := make([]readerer.Sentence, 500)
+	for i := range sentences {
+		sentences[i] = readerer.Sentence{
+			Text:   "キャンセルテスト",
+			Tokens: []readerer.Token{{Surface: "A", BaseForm: "A", Reading: "A", PartsOfSpeech: []string{"名詞"}}},
+		}
+	}
+
+	ingester := NewIngester(conn, nil)
+	ingester.Workers = 8
+	ingester.BatchSize = 10
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := ingester.Ingest(ctx, sourceID, sentences)
+		done <- err
+	}()
+
+	// Cancel shortly after starting to simulate early shutdown
+	time.Sleep(10 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-done:
+		// Ingest should return quickly; accept context.Canceled or nil but ensure it didn't hang
+		if err != nil && err != context.Canceled {
+			t.Fatalf("unexpected error after cancel: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Ingest hung after cancellation")
 	}
 }

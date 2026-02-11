@@ -45,9 +45,23 @@
   - [x] Consolidate conjugated forms under the single Lemma entry.
 - [x] **Fix Duplicate Contexts**: Ensure we don't keep the same context sentence if a word shows up twice in the same sentence.
 - [x] **Offline Tests**: Update tests to use local `testdata` content instead of fetching live URLs.
-- [ ] **Concurrent Processing**: Add concurrency to improve ingestion speed.
-  - [ ] Refactor `Ingest` to use a Worker Pool for intensive tasks (tokenization, lookup).
-  - [ ] Implement a smooth batch writer for SQLite.
+- [x] **Concurrent Processing**: Add concurrency to improve ingestion speed.
+  - [x] Design a **Worker Pool** to parallelize tokenization/lookup per-sentence or per-chunk.  
+    - [x] Create a `WorkerPool` type with a configurable worker count and job queue.  
+    - [x] Ensure deterministic ordering where needed (e.g., per-source checkpoints).
+    - [x] Add unit tests and a small benchmark.
+  - [x] Implement a **Batch Writer** for SQLite to group DB writes and reduce transaction overhead.  
+    - [x] Create a `BatchWriter` type that accepts write callbacks, batches them by size or time, and commits in transactions.  
+    - [x] Ensure thread-safety and graceful shutdown/flush on context cancellation.
+    - [x] Add tests verifying batching and flush behavior.
+  - [x] Integration tasks
+    - [x] Refactor `Ingester.Ingest` to submit work to the `WorkerPool` and use the `BatchWriter` for DB writes.
+    - [x] Add integration tests (small article fixtures) to validate correctness and throughput improvements.
+    - [x] Add metrics and a benchmark to measure improvements.
+  - [x] Make `WorkerPool.Submit` recover from send-on-closed-channel races and add `TestSubmitRecoversFromCloseRace` (avoids panics when `Close` races with blocked `Submit`).
+  - [x] Add `TestContextCancellationStopsWorkers` to verify cancelling the `Start` context stops workers and that `Close()` returns promptly.
+  - [x] Remove ignored duplicate test file `pkg/ingest/ingest_test_submit_error.go` to avoid stale test code.
+  **Status:** Concurrency implemented with Producer-Consumer pattern. `BatchWriter` uses serialized background flushing for SQLite safety.
 - [ ] **Web UI**: Create a web interface to view words (using Meteor).
   - [ ] Create Go API server.
   - [ ] Create Meteor frontend.
