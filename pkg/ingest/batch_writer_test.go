@@ -32,7 +32,6 @@ func TestBatchWriterTransactions(t *testing.T) {
 		mu.Unlock()
 	}
 
-	done := make(chan struct{})
 	// Submit 2 items (batch size 2) - should succeed
 	bw.Submit(func(ctx context.Context, tx *sql.Tx) error {
 		_, err := tx.Exec("INSERT INTO test (val) VALUES (?)", "A")
@@ -40,22 +39,22 @@ func TestBatchWriterTransactions(t *testing.T) {
 	})
 	bw.Submit(func(ctx context.Context, tx *sql.Tx) error {
 		_, err := tx.Exec("INSERT INTO test (val) VALUES (?)", "B")
-		// Signal done after 2nd (flush should happen)
-		close(done)
 		return err
 	})
 
-	// Wait for async flush
+	// Close and wait for pending batches to be committed. Use a timeout to avoid hanging tests.
+	doneCh := make(chan error, 1)
+	go func() {
+		doneCh <- bw.Close()
+	}()
 	select {
-	case <-done:
+	case err := <-doneCh:
+		if err != nil {
+			t.Fatalf("close failed: %v", err)
+		}
 	case <-time.After(1 * time.Second):
-		t.Fatal("timeout waiting for batch execution")
+		t.Fatal("timeout waiting for batch commit/close")
 	}
-
-	// Wait a bit for the flush goroutine to finish commit (it happens after the last callback returns)
-	// Ideally we'd have a signal for "flush complete" but closing logic handles it too.
-	// For this test, rely on Close() to strict flush wait.
-	bw.Close()
 
 	// Verify A and B exist
 	var count int
@@ -106,7 +105,9 @@ func TestBatchWriterRollback(t *testing.T) {
 
 	// Verify table is empty (rollback worked)
 	var count int
-	db.QueryRow("SELECT COUNT(*) FROM test").Scan(&count)
+	if err := db.QueryRow("SELECT COUNT(*) FROM test").Scan(&count); err != nil {
+		t.Fatalf("failed to query row count: %v", err)
+	}
 	if count != 0 {
 		t.Fatalf("expected 0 rows (rollback), got %d", count)
 	}
@@ -157,30 +158,49 @@ func TestBatchWriterFlushesOnInterval(t *testing.T) {
 }
 
 func TestBatchWriterDropsBatchOnCancel(t *testing.T) {
-	bw := NewBatchWriter(nil, 2, 0)
+	// We need to ensure the committer is busy and commitCh is full when ctx is canceled.
+	// Use a blocker so the committer will be processing the first batch while a second batch fills the buffer.
+	bw := NewBatchWriter(nil, 1, 0) // small batch size to create batches quickly
 	defer bw.Close()
 	errCh := make(chan error, 1)
 	bw.OnError = func(e error) {
 		errCh <- e
 	}
 
-	// Cancel the writer's context before submitting; this should cause flushLocked
-	// to select ctx.Done() and report the dropped batch via OnError.
+	blocker := make(chan struct{})
+
+	// First batch: long-running callback that will block until we unblock it.
+	if err := bw.Submit(func(ctx context.Context, tx *sql.Tx) error {
+		<-blocker // block here
+		return nil
+	}); err != nil {
+		t.Fatalf("submit failed: %v", err)
+	}
+
+	// Second batch: will be queued in commitCh buffer while first is being processed
+	if err := bw.Submit(func(ctx context.Context, tx *sql.Tx) error { return nil }); err != nil {
+		t.Fatalf("submit failed: %v", err)
+	}
+
+	// Now cancel the writer's context so further batches cannot be queued
 	bw.cancel()
 
-	if err := bw.Submit(func(ctx context.Context, tx *sql.Tx) error { return nil }); err != nil {
-		t.Fatalf("submit failed: %v", err)
-	}
+	// Third batch: this submit will attempt to flush a batch and should find commitCh full and ctx.Done set,
+	// causing it to report a dropped batch via OnError.
 	if err := bw.Submit(func(ctx context.Context, tx *sql.Tx) error { return nil }); err != nil {
 		t.Fatalf("submit failed: %v", err)
 	}
 
+	// Unblock the first batch so committer can finish and allow Close() to complete
+	close(blocker)
+
+	// Wait for OnError to be called
 	select {
 	case e := <-errCh:
 		if e == nil || !strings.Contains(e.Error(), "dropping batch") {
 			t.Fatalf("unexpected OnError value: %v", e)
 		}
-	case <-time.After(200 * time.Millisecond):
+	case <-time.After(500 * time.Millisecond):
 		t.Fatal("expected OnError to be called when batch dropped")
 	}
 }

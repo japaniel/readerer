@@ -58,6 +58,7 @@
     - [x] Refactor `Ingester.Ingest` to submit work to the `WorkerPool` and use the `BatchWriter` for DB writes.
     - [x] Add integration tests (small article fixtures) to validate correctness and throughput improvements.
     - [x] Add metrics and a benchmark to measure improvements.
+    - [ ] Add retry/repair task for dropped batches: persist failed/dropped batch metadata and implement a replay/retry mechanism triggered on next run or via an administrative command.
   
   **Status:** Concurrency implemented with Producer-Consumer pattern. `BatchWriter` uses serialized background flushing for SQLite safety.
 - [ ] **Web UI**: Create a web interface to view words (using Meteor).
