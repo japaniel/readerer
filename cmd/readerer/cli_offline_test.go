@@ -16,6 +16,27 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
+func exeSuffixFor(goos string) string {
+	if goos == "windows" {
+		return ".exe"
+	}
+	return ""
+}
+
+func TestExeSuffixFor(t *testing.T) {
+	cases := []struct{ goos, want string }{
+		{"windows", ".exe"},
+		{"linux", ""},
+		{"darwin", ""},
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := exeSuffixFor(c.goos); got != c.want {
+			t.Fatalf("exeSuffixFor(%q) = %q; want %q", c.goos, got, c.want)
+		}
+	}
+}
+
 func TestCLI_OfflineServer(t *testing.T) {
 	tmp := t.TempDir()
 
