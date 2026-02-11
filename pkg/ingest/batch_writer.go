@@ -2,20 +2,16 @@ package ingest
 
 import (
 	"context"
+	"database/sql"
+	"fmt"
 	"sync"
 	"time"
 )
 
-// WriteFunc is a callback that performs database writes inside a transaction-like
-// context. The BatchWriter is responsible for calling WriteFuncs in a batch and
-// ensuring they run sequentially inside a commit.
-type WriteFunc func(ctx context.Context) error
+// WriteFunc is a callback that performs database writes inside a transaction.
+type WriteFunc func(ctx context.Context, tx *sql.Tx) error
 
-// BatchWriter buffers write operations and flushes them either when a batch
-// reaches capacity or when a flush interval elapses.
-//
-// NOTE: This is a scaffold. The concrete implementation should accept a DB
-// executor (or begin/commit helpers). For testing we use in-memory callbacks.
+// BatchWriter buffers write operations and flushes them in batches inside a transaction.
 type BatchWriter struct {
 	mu          sync.Mutex
 	buf         []WriteFunc
@@ -25,10 +21,17 @@ type BatchWriter struct {
 	wg          sync.WaitGroup
 	ctx         context.Context
 	cancel      context.CancelFunc
+
+	commitCh chan []WriteFunc
+	db       *sql.DB
+	OnError  func(error)
 }
 
-// NewBatchWriter creates a new BatchWriter. flushInterval=0 disables periodic flushes.
-func NewBatchWriter(bufferSize int, flushInterval time.Duration) *BatchWriter {
+// NewBatchWriter creates a new BatchWriter.
+// db: the database connection to use for transactions.
+// bufferSize: flush when buffer reaches this size.
+// flushInterval: flush after this duration (0 to disable).
+func NewBatchWriter(db *sql.DB, bufferSize int, flushInterval time.Duration) *BatchWriter {
 	if bufferSize <= 0 {
 		bufferSize = 10
 	}
@@ -39,7 +42,13 @@ func NewBatchWriter(bufferSize int, flushInterval time.Duration) *BatchWriter {
 		flushTicker: nil,
 		ctx:         ctx,
 		cancel:      cancel,
+		commitCh:    make(chan []WriteFunc, 2), // Buffer a couple of batches
+		db:          db,
 	}
+
+	bw.wg.Add(1)
+	go bw.committer()
+
 	if flushInterval > 0 {
 		bw.flushTicker = time.NewTicker(flushInterval)
 		bw.wg.Add(1)
@@ -48,7 +57,7 @@ func NewBatchWriter(bufferSize int, flushInterval time.Duration) *BatchWriter {
 	return bw
 }
 
-// Submit enqueues a write function for later batched execution. It returns an error if closed.
+// Submit enqueues a write function.
 func (bw *BatchWriter) Submit(w WriteFunc) error {
 	bw.mu.Lock()
 	defer bw.mu.Unlock()
@@ -57,7 +66,6 @@ func (bw *BatchWriter) Submit(w WriteFunc) error {
 	}
 	bw.buf = append(bw.buf, w)
 	if len(bw.buf) >= bw.cap {
-		// trigger a flush asynchronously
 		bw.flushLocked()
 	}
 	return nil
@@ -65,18 +73,66 @@ func (bw *BatchWriter) Submit(w WriteFunc) error {
 
 // flushLocked assumes bw.mu is held.
 func (bw *BatchWriter) flushLocked() {
+	if len(bw.buf) == 0 {
+		return
+	}
 	batch := bw.buf
 	bw.buf = make([]WriteFunc, 0, bw.cap)
-	bw.wg.Add(1)
-	go func(batch []WriteFunc) {
-		defer bw.wg.Done()
-		// In a real implementation, begin a transaction and execute each WriteFunc
-		// sequentially; commit/rollback on errors. Here we run callbacks to keep
-		// behavior testable without a DB dependency.
-		for _, w := range batch {
-			_ = w(bw.ctx)
+
+	// Send to committer.
+	// Note: We cannot block indefinitely here while holding the lock,
+	// because Submit() calls this. If committer is stuck, Submit blocks, which propagates backpressure.
+	// However, Close() also calls this under lock.
+	select {
+	case bw.commitCh <- batch:
+	case <-bw.ctx.Done():
+		// shutdown
+	}
+}
+
+func (bw *BatchWriter) committer() {
+	defer bw.wg.Done()
+	for batch := range bw.commitCh {
+		if err := bw.executeBatch(batch); err != nil {
+			if bw.OnError != nil {
+				bw.OnError(err)
+			}
 		}
-	}(batch)
+	}
+}
+
+func (bw *BatchWriter) executeBatch(batch []WriteFunc) error {
+	// If no DB is configured (e.g. testing without DB), just run callbacks with nil tx
+	if bw.db == nil {
+		for _, w := range batch {
+			if err := w(bw.ctx, nil); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	// Use background context for flushing to avoid "context canceled" if bw is closing.
+	ctx := context.Background()
+
+	tx, err := bw.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin batch tx: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback() // ignored if committed
+	}()
+
+	for _, w := range batch {
+		if err := w(ctx, tx); err != nil {
+			return err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit batch (%d items): %w", len(batch), err)
+	}
+	return nil
 }
 
 func (bw *BatchWriter) loop() {
@@ -111,7 +167,9 @@ func (bw *BatchWriter) Close() error {
 		bw.flushLocked()
 	}
 	bw.mu.Unlock()
-	bw.cancel()
+
+	bw.cancel()        // Stop ticker loop
+	close(bw.commitCh) // Stop committer loop
 	bw.wg.Wait()
 	return nil
 }
