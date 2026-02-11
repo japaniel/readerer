@@ -58,8 +58,23 @@ CREATE TABLE IF NOT EXISTS sentences (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- No seeding required: databases are created fresh in our test/dev workflow, so
--- do not pre-populate the `sentences` table from existing columns.
+-- Seed the `sentences` table from existing sentence-like columns so that
+-- subsequent conversion queries can resolve sentence IDs when upgrading an
+-- existing database. On a fresh database, these inserts are effectively no-ops.
+INSERT OR IGNORE INTO sentences(text)
+    SELECT DISTINCT context_sentence
+    FROM word_sources
+    WHERE context_sentence IS NOT NULL;
+
+INSERT OR IGNORE INTO sentences(text)
+    SELECT DISTINCT example_sentence
+    FROM word_sources
+    WHERE example_sentence IS NOT NULL;
+
+INSERT OR IGNORE INTO sentences(text)
+    SELECT DISTINCT sentence
+    FROM word_contexts
+    WHERE sentence IS NOT NULL;
 
 -- Create new tables that reference sentences by id
 CREATE TABLE IF NOT EXISTS new_word_sources (
