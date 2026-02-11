@@ -11,8 +11,7 @@
   "containerEnv": {
     "GOPATH": "/workspace/.gopath",
     "GOMODCACHE": "/workspace/.gopath/pkg/mod",
-    "GOPROXY": "https://proxy.golang.org,direct",
-    "SSH_AUTH_SOCK": ""
+    "GOPROXY": "https://proxy.golang.org,direct"
   },
   "customizations": {
     "vscode": {
@@ -30,8 +29,14 @@
     }
   },
   "mounts": [
-    "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
-    "source=${localEnv:SSH_AUTH_SOCK},target=/run/keeper-ssh-agent.sock,type=bind"
+    "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached"
   ],
+  // If you need Keeper SSH agent in the container, add the following mount locally before opening the devcontainer:
+  // "source=<path-to-keeper-socket-on-host>,target=/run/keeper-ssh-agent.sock,type=bind"
+  // Example (host-only change):
+  //   "mounts": [
+  //     "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+  //     "source=${localEnv:KEEPER_SSH_SOCKET},target=/run/keeper-ssh-agent.sock,type=bind"
+  //   ],
   "workspaceFolder": "/workspace"
 }
