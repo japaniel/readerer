@@ -69,6 +69,32 @@ func (p *WorkerPool) Submit(job Job) error {
 	return nil
 }
 
+// SubmitCtx attempts to enqueue a job but returns promptly if ctx is canceled.
+// It tolerates the race where Close() may close the jobs channel while sending by
+// recovering from a panic and returning ErrPoolClosed.
+func (p *WorkerPool) SubmitCtx(ctx context.Context, job Job) (err error) {
+	p.closeMu.Lock()
+	if p.closed {
+		p.closeMu.Unlock()
+		return ErrPoolClosed
+	}
+	p.closeMu.Unlock()
+
+	defer func() {
+		if r := recover(); r != nil {
+			// Likely a send on closed channel — treat as ErrPoolClosed
+			err = ErrPoolClosed
+		}
+	}()
+
+	select {
+	case p.jobs <- job:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 // Close stops accepting new jobs and waits for workers to finish.
 func (p *WorkerPool) Close() {
 	p.closeMu.Lock()

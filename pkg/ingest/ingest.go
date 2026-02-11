@@ -15,6 +15,15 @@ import (
 	"github.com/japaniel/readerer/pkg/readerer"
 )
 
+// WorkerPoolInterface abstracts the worker pool so tests can inject failing implementations.
+type WorkerPoolInterface interface {
+	Start(ctx context.Context)
+	Submit(Job) error
+	// SubmitCtx attempts to enqueue a job but returns promptly if ctx is canceled.
+	SubmitCtx(ctx context.Context, job Job) error
+	Close()
+}
+
 // Ingester handles the ingestion of sentences into the database.
 type Ingester struct {
 	DB           *sql.DB
@@ -27,6 +36,9 @@ type Ingester struct {
 
 	// Concurrency settings
 	Workers int
+
+	// PoolFactory allows tests to inject custom worker pool implementations.
+	PoolFactory func(workers, queue int) WorkerPoolInterface
 }
 
 // NewIngester creates a new Ingester.
@@ -82,8 +94,17 @@ func (ig *Ingester) Ingest(ctx context.Context, sourceID int64, sentences []read
 	}
 
 	// 1. Setup concurrency components
-	wp := NewWorkerPool(ig.Workers, ig.Workers*2)
+	var wp WorkerPoolInterface
+	if ig.PoolFactory != nil {
+		wp = ig.PoolFactory(ig.Workers, ig.Workers*2)
+	} else {
+		wp = NewWorkerPool(ig.Workers, ig.Workers*2)
+	}
 	resultCh := make(chan processedSentence, ig.Workers*2)
+	closedResultCh := false
+
+	// We use a separate channel to communicate final done/error state
+	doneCh := make(chan error, 1)
 
 	// Link tracker
 	var totalLinks int64
@@ -102,36 +123,38 @@ func (ig *Ingester) Ingest(ctx context.Context, sourceID int64, sentences []read
 		batchErrMu.Unlock()
 	}
 
-	defer bw.Close()
-	defer wp.Close()
+	// Ensure resources are cleaned up on any return path: stop workers, close resultCh, flush batches.
+	defer func() {
+		// Close the worker pool and other resources on exit.
+		wp.Close()
+		if !closedResultCh {
+			close(resultCh)
+		}
+		// Best-effort close; ignore already-closed errors
+		_ = bw.Close()
+	}()
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	wp.Start(ctx)
 
-	// 2. Start result consumer (reordering and submission)
-	// We use a separate channel to communicate final done/error state
-	doneCh := make(chan error, 1)
-
 	go func() {
 		defer close(doneCh)
 		buffer := make(map[int]processedSentence)
 		nextIdx := startIdx
 
-		for i := 0; i < totalSentences-startIdx; i++ {
+		for {
 			select {
 			case <-ctx.Done():
 				doneCh <- ctx.Err()
 				return
-			case res := <-resultCh:
-				if res.Error != nil {
-					doneCh <- res.Error
-					return
-				}
-				buffer[res.Index] = res
+			default:
+			}
 
-				// Process contiguous finished items
+			res, ok := <-resultCh
+			if !ok {
+				// resultCh closed; process any remaining contiguous entries then exit
 				for {
 					item, ok := buffer[nextIdx]
 					if !ok {
@@ -139,15 +162,11 @@ func (ig *Ingester) Ingest(ctx context.Context, sourceID int64, sentences []read
 					}
 					delete(buffer, nextIdx)
 
-					// Submit DB write job to BatchWriter
-					// Isolate loop variable
 					currentItem := item
 					err := bw.Submit(func(ctx context.Context, tx *sql.Tx) error {
 						for _, w := range currentItem.Words {
 							wordID, err := db.CreateOrGetWord(tx, w.Word, w.Word, w.Reading, w.Definitions, "ja")
 							if err != nil {
-								// Log weak errors, but fail hard on others?
-								// For now, return error to rollback batch
 								return fmt.Errorf("failed to persist word %s: %w", w.Word, err)
 							}
 							if err := db.LinkWordToSource(tx, wordID, sourceID, currentItem.Sentence, currentItem.Sentence, w.Count); err != nil {
@@ -155,7 +174,6 @@ func (ig *Ingester) Ingest(ctx context.Context, sourceID int64, sentences []read
 							}
 							atomic.AddInt64(&totalLinks, int64(w.Count))
 						}
-						// Checkpoint progress for this sentence
 						if err := db.UpdateSourceProgress(tx, sourceID, currentItem.Index); err != nil {
 							return fmt.Errorf("failed to save progress: %w", err)
 						}
@@ -163,23 +181,76 @@ func (ig *Ingester) Ingest(ctx context.Context, sourceID int64, sentences []read
 					})
 
 					if err != nil {
-						doneCh <- err
+						// Signal producers to stop to prevent them from blocking on resultCh.
+						cancel()
 						return
 					}
 
-					// Update UI progress (approximate, since batch might not be flushed yet)
 					if ig.OnProgress != nil && (nextIdx+1)%ig.BatchSize == 0 {
 						ig.OnProgress(nextIdx+1, totalSentences)
 					}
 					nextIdx++
 				}
+
+				if ig.OnProgress != nil {
+					ig.OnProgress(totalSentences, totalSentences)
+				}
+				doneCh <- nil
+				return
+			}
+
+			if res.Error != nil {
+				fmt.Println("consumer: got res.Error", res.Error)
+				// Ensure producers are signaled to stop so they don't block writing to resultCh.
+				cancel()
+				doneCh <- res.Error
+				return
+			}
+			buffer[res.Index] = res
+
+			// Process contiguous finished items
+			for {
+				item, ok := buffer[nextIdx]
+				if !ok {
+					break
+				}
+				delete(buffer, nextIdx)
+
+				// Submit DB write job to BatchWriter
+				// Isolate loop variable
+				currentItem := item
+				err := bw.Submit(func(ctx context.Context, tx *sql.Tx) error {
+					for _, w := range currentItem.Words {
+						wordID, err := db.CreateOrGetWord(tx, w.Word, w.Word, w.Reading, w.Definitions, "ja")
+						if err != nil {
+							return fmt.Errorf("failed to persist word %s: %w", w.Word, err)
+						}
+						if err := db.LinkWordToSource(tx, wordID, sourceID, currentItem.Sentence, currentItem.Sentence, w.Count); err != nil {
+							return fmt.Errorf("failed to link word %d: %w", wordID, err)
+						}
+						atomic.AddInt64(&totalLinks, int64(w.Count))
+					}
+					// Checkpoint progress for this sentence
+					if err := db.UpdateSourceProgress(tx, sourceID, currentItem.Index); err != nil {
+						return fmt.Errorf("failed to save progress: %w", err)
+					}
+					return nil
+				})
+
+				if err != nil {
+					// Signal producers to stop to prevent them from blocking on resultCh.
+					cancel()
+					doneCh <- err
+					return
+				}
+
+				// Update UI progress (approximate, since batch might not be flushed yet)
+				if ig.OnProgress != nil && (nextIdx+1)%ig.BatchSize == 0 {
+					ig.OnProgress(nextIdx+1, totalSentences)
+				}
+				nextIdx++
 			}
 		}
-		// Final progress update
-		if ig.OnProgress != nil {
-			ig.OnProgress(totalSentences, totalSentences)
-		}
-		doneCh <- nil
 	}()
 
 	// 3. Producer loop: Submit tokenization jobs
@@ -198,27 +269,52 @@ Loop:
 		idx := i
 		sent := sentences[i]
 
-		err := wp.Submit(func(ctx context.Context) error {
+		job := func(ctx context.Context) error {
 			// CPU-bound work: Analyze sentence and prepare data
 			res := ig.processSentence(idx, sent, asciiRegex)
+			fmt.Println("job: processed", idx)
 
+			// Attempt to send result; the channel may be closed if cancellation occurred,
+			// so use recover to avoid a send-on-closed-channel panic.
+			defer func() {
+				if r := recover(); r != nil {
+					// swallow send on closed channel panic when shutdown races occur
+				}
+			}()
 			select {
 			case resultCh <- res:
 			case <-ctx.Done():
 			}
 			return nil
-		})
+		}
 
-		if err != nil {
-			// Pool closed or other error
+		// Submit job to the worker pool but remain responsive to context cancellation.
+		if err := wp.SubmitCtx(ctx, job); err != nil {
+			// If the error is context cancellation, propagate it.
+			if err == ctx.Err() {
+				break Loop
+			}
+			// If pool is closed as part of shutdown, break out gracefully.
+			if err == ErrPoolClosed {
+				break Loop
+			}
 			return 0, err
 		}
+
+	}
+
+	// Ensure there are no more worker goroutines running and close the result channel to
+	// signal the consumer that no more items will arrive.
+	wp.Close()
+	if !closedResultCh {
+		close(resultCh)
+		closedResultCh = true
 	}
 
 	// Wait for consumer to finish processing all results or error out
 	consumerErr := <-doneCh
 
-	// Close BatchWriter to flush pending changes
+	// BatchWriter will be closed in the deferred cleanup; call here to capture errors early.
 	if err := bw.Close(); err != nil {
 		if consumerErr == nil {
 			consumerErr = err
@@ -232,7 +328,8 @@ Loop:
 	}
 	batchErrMu.Unlock()
 
-	// Return 0 for linkCount as it requires complex tracking in async mode
+	// Return the accumulated number of linked word occurrences recorded during ingestion.
+	// `totalLinks` is updated atomically by DB write callbacks.
 	return int(atomic.LoadInt64(&totalLinks)), consumerErr
 }
 

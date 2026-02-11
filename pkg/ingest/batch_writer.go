@@ -25,6 +25,10 @@ type BatchWriter struct {
 	commitCh chan []WriteFunc
 	db       *sql.DB
 	OnError  func(error)
+
+	// lastErr stores the first asynchronous error seen by the writer. Protected by errMu.
+	errMu   sync.Mutex
+	lastErr error
 }
 
 // NewBatchWriter creates a new BatchWriter.
@@ -86,9 +90,15 @@ func (bw *BatchWriter) flushLocked() {
 	select {
 	case bw.commitCh <- batch:
 	case <-bw.ctx.Done():
-		// shutdown: report dropped batch via OnError so callers can detect potential data loss.
+		// shutdown: report dropped batch via OnError and record the error so callers can detect potential data loss.
+		err := fmt.Errorf("batch writer: dropping batch of %d items due to context cancellation", len(batch))
+		bw.errMu.Lock()
+		if bw.lastErr == nil {
+			bw.lastErr = err
+		}
+		bw.errMu.Unlock()
 		if bw.OnError != nil {
-			bw.OnError(fmt.Errorf("batch writer: dropping batch of %d items due to context cancellation", len(batch)))
+			bw.OnError(err)
 		}
 	}
 
@@ -98,6 +108,12 @@ func (bw *BatchWriter) committer() {
 	defer bw.wg.Done()
 	for batch := range bw.commitCh {
 		if err := bw.executeBatch(batch); err != nil {
+			// Persist the first async error so callers can retrieve it after Close().
+			bw.errMu.Lock()
+			if bw.lastErr == nil {
+				bw.lastErr = err
+			}
+			bw.errMu.Unlock()
 			if bw.OnError != nil {
 				bw.OnError(err)
 			}
@@ -175,6 +191,13 @@ func (bw *BatchWriter) Close() error {
 	bw.cancel()        // Stop ticker loop
 	close(bw.commitCh) // Stop committer loop
 	bw.wg.Wait()
+
+	// Return any async error that was recorded during execution
+	bw.errMu.Lock()
+	defer bw.errMu.Unlock()
+	if bw.lastErr != nil {
+		return bw.lastErr
+	}
 	return nil
 }
 
