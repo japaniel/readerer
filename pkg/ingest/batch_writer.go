@@ -86,8 +86,12 @@ func (bw *BatchWriter) flushLocked() {
 	select {
 	case bw.commitCh <- batch:
 	case <-bw.ctx.Done():
-		// shutdown
+		// shutdown: report dropped batch via OnError so callers can detect potential data loss.
+		if bw.OnError != nil {
+			bw.OnError(fmt.Errorf("batch writer: dropping batch of %d items due to context cancellation", len(batch)))
+		}
 	}
+
 }
 
 func (bw *BatchWriter) committer() {

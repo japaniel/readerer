@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -152,5 +153,34 @@ func TestBatchWriterFlushesOnInterval(t *testing.T) {
 	}
 	if called != 1 {
 		t.Fatalf("expected 1 call, got %d", called)
+	}
+}
+
+func TestBatchWriterDropsBatchOnCancel(t *testing.T) {
+	bw := NewBatchWriter(nil, 2, 0)
+	defer bw.Close()
+	errCh := make(chan error, 1)
+	bw.OnError = func(e error) {
+		errCh <- e
+	}
+
+	// Cancel the writer's context before submitting; this should cause flushLocked
+	// to select ctx.Done() and report the dropped batch via OnError.
+	bw.cancel()
+
+	if err := bw.Submit(func(ctx context.Context, tx *sql.Tx) error { return nil }); err != nil {
+		t.Fatalf("submit failed: %v", err)
+	}
+	if err := bw.Submit(func(ctx context.Context, tx *sql.Tx) error { return nil }); err != nil {
+		t.Fatalf("submit failed: %v", err)
+	}
+
+	select {
+	case e := <-errCh:
+		if e == nil || !strings.Contains(e.Error(), "dropping batch") {
+			t.Fatalf("unexpected OnError value: %v", e)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("expected OnError to be called when batch dropped")
 	}
 }
