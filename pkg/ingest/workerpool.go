@@ -58,13 +58,25 @@ func (p *WorkerPool) Start(ctx context.Context) {
 	}
 }
 
-// Submit enqueues a job for processing. Returns an error if the pool is closed.
-func (p *WorkerPool) Submit(job Job) error {
+// Submit enqueues a job for processing. It may block if the job queue is full.
+// Use SubmitCtx if you need to cancel while waiting. Submit returns ErrPoolClosed
+// if the pool is closed. It recovers from a send-on-closed-channel panic to
+// make the race between Close and Submit safe (returns ErrPoolClosed).
+func (p *WorkerPool) Submit(job Job) (err error) {
 	p.closeMu.Lock()
-	defer p.closeMu.Unlock()
 	if p.closed {
+		p.closeMu.Unlock()
 		return ErrPoolClosed
 	}
+	p.closeMu.Unlock()
+
+	defer func() {
+		if r := recover(); r != nil {
+			// Likely a send on closed channel — treat as ErrPoolClosed
+			err = ErrPoolClosed
+		}
+	}()
+
 	p.jobs <- job
 	return nil
 }
