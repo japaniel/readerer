@@ -48,9 +48,6 @@ func generateBenchmarkSentences(n int) []readerer.Sentence {
 }
 
 func BenchmarkIngest(b *testing.B) {
-	conn := setupBenchmarkDB(b)
-	defer conn.Close()
-
 	// 1000 sentences
 	sentences := generateBenchmarkSentences(1000)
 
@@ -58,17 +55,27 @@ func BenchmarkIngest(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		b.StopTimer()
+		conn := setupBenchmarkDB(b)
+
 		sourceName := fmt.Sprintf("bench_%d", i)
-		sourceID, _ := db.CreateOrGetSource(conn, "test", sourceName, "", "", "http://bench", "")
+		sourceID, err := db.CreateOrGetSource(conn, "test", sourceName, "", "", "http://bench", "")
+		if err != nil {
+			conn.Close()
+			b.Fatalf("CreateOrGetSource failed: %v", err)
+		}
+
 		ingester := NewIngester(conn, nil)
 		ingester.Workers = 4
 		ingester.BatchSize = 100
 		b.StartTimer()
 
-		_, err := ingester.Ingest(context.Background(), sourceID, sentences)
+		_, err = ingester.Ingest(context.Background(), sourceID, sentences)
+		b.StopTimer()
 		if err != nil {
+			conn.Close()
 			b.Fatalf("Ingest failed: %v", err)
 		}
+		conn.Close()
 	}
 }
 
@@ -81,24 +88,30 @@ func BenchmarkIngestConcurrencyScaling(b *testing.B) {
 
 	for _, workers := range counts {
 		b.Run(fmt.Sprintf("Workers_%d", workers), func(b *testing.B) {
-			conn := setupBenchmarkDB(b)
-			defer conn.Close()
-
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				b.StopTimer()
+				conn := setupBenchmarkDB(b)
+
 				sourceName := fmt.Sprintf("bench_%d_%d", workers, i)
-				sourceID, _ := db.CreateOrGetSource(conn, "test", sourceName, "", "", "http://bench", "")
+				sourceID, err := db.CreateOrGetSource(conn, "test", sourceName, "", "", "http://bench", "")
+				if err != nil {
+					conn.Close()
+					b.Fatalf("CreateOrGetSource failed: %v", err)
+				}
 
 				ingester := NewIngester(conn, nil)
 				ingester.Workers = workers
 				ingester.BatchSize = 100 // Keep batch size constant
 				b.StartTimer()
 
-				_, err := ingester.Ingest(context.Background(), sourceID, sentences)
+				_, err = ingester.Ingest(context.Background(), sourceID, sentences)
+				b.StopTimer()
 				if err != nil {
+					conn.Close()
 					b.Fatalf("Ingest failed: %v", err)
 				}
+				conn.Close()
 			}
 		})
 	}
