@@ -230,10 +230,22 @@ func TestLinkUpdatesContext(t *testing.T) {
 	if err := LinkWordToSource(db, wID, sID, "更新された文。", "更新された文。", 1); err != nil {
 		t.Fatalf("link update: %v", err)
 	}
-	var ctx, ex string
-	err = db.QueryRow(`SELECT context_sentence, example_sentence FROM word_sources WHERE word_id = ? AND source_id = ?`, wID, sID).Scan(&ctx, &ex)
+	var ctxID, exID sql.NullInt64
+	err = db.QueryRow(`SELECT context_sentence_id, example_sentence_id FROM word_sources WHERE word_id = ? AND source_id = ?`, wID, sID).Scan(&ctxID, &exID)
 	if err != nil {
-		t.Fatalf("query: %v", err)
+		t.Fatalf("query ids: %v", err)
+	}
+	if !ctxID.Valid || !exID.Valid {
+		t.Fatalf("expected non-null sentence ids, got %v / %v", ctxID, exID)
+	}
+	var ctx, ex string
+	err = db.QueryRow(`SELECT text FROM sentences WHERE id = ?`, ctxID.Int64).Scan(&ctx)
+	if err != nil {
+		t.Fatalf("query ctx text: %v", err)
+	}
+	err = db.QueryRow(`SELECT text FROM sentences WHERE id = ?`, exID.Int64).Scan(&ex)
+	if err != nil {
+		t.Fatalf("query ex text: %v", err)
 	}
 	if ctx != "更新された文。" || ex != "更新された文。" {
 		t.Fatalf("expected updated context/example, got %s / %s", ctx, ex)
