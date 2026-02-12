@@ -91,6 +91,30 @@ func CreateOrGetSource(db DBExecutor, sourceType, title, author, website, url, m
 }
 
 // LinkWordToSource links the word and source, creating or updating an entry in word_sources.
+func getOrCreateSentence(db DBExecutor, text string) (int64, error) {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return 0, nil
+	}
+	var id int64
+	// Try to find existing sentence first
+	if err := db.QueryRow(`SELECT id FROM sentences WHERE text = ?`, trimmed).Scan(&id); err == nil {
+		return id, nil
+	} else if err != sql.ErrNoRows {
+		return 0, err
+	}
+	// Insert if missing (concurrent-safe via UNIQUE constraint)
+	if _, err := db.Exec(`INSERT OR IGNORE INTO sentences (text) VALUES (?)`, trimmed); err != nil {
+		return 0, err
+	}
+	// Select again to get id
+	if err := db.QueryRow(`SELECT id FROM sentences WHERE text = ?`, trimmed).Scan(&id); err != nil {
+		return 0, err
+	}
+	return id, nil
+}
+
+// LinkWordToSource links the word and source, creating or updating an entry in word_sources.
 func LinkWordToSource(db DBExecutor, wordID, sourceID int64, context, example string, incrementAmount int) error {
 	if wordID <= 0 {
 		return fmt.Errorf("wordID must be positive")
@@ -101,31 +125,48 @@ func LinkWordToSource(db DBExecutor, wordID, sourceID int64, context, example st
 	if incrementAmount < 1 {
 		return fmt.Errorf("incrementAmount must be positive, got %d", incrementAmount)
 	}
-	// Use SQLite UPSERT to atomically insert or update occurrence_count and context/example
+
+	// Get or create sentences
+	ctxID, err := getOrCreateSentence(db, context)
+	if err != nil {
+		return fmt.Errorf("get/create context sentence: %w", err)
+	}
+	exID, err := getOrCreateSentence(db, example)
+	if err != nil {
+		return fmt.Errorf("get/create example sentence: %w", err)
+	}
+
+	// Use SQLite UPSERT to atomically insert or update occurrence_count and sentence ids
 	var wordSourceID int64
-	// occurrence_count init value is incrementAmount
-	err := db.QueryRow(`INSERT INTO word_sources (word_id, source_id, context_sentence, example_sentence, occurrence_count, first_seen_at)
+	err = db.QueryRow(`INSERT INTO word_sources (word_id, source_id, context_sentence_id, example_sentence_id, occurrence_count, first_seen_at)
 	VALUES (?, ?, ?, ?, ?, ?)
 	ON CONFLICT(word_id, source_id) DO UPDATE SET
 	  occurrence_count = word_sources.occurrence_count + excluded.occurrence_count,
-	  context_sentence = excluded.context_sentence,
-	  example_sentence = excluded.example_sentence
-	RETURNING id`, wordID, sourceID, context, example, incrementAmount, time.Now()).Scan(&wordSourceID)
+	  context_sentence_id = excluded.context_sentence_id,
+	  example_sentence_id = excluded.example_sentence_id
+	RETURNING id`, wordID, sourceID, nullableInt64(ctxID), nullableInt64(exID), incrementAmount, time.Now()).Scan(&wordSourceID)
 	if err != nil {
 		return err
 	}
 
 	// Limit stored contexts to 5 per word-source pair
 	// Atomic insert using INSERT ... SELECT ... WHERE count < 5
-	// This prevents race conditions where concurrent ingesters might both see count < 5 and insert.
 	_, err = db.Exec(`
-		INSERT INTO word_contexts (word_source_id, sentence)
+		INSERT INTO word_contexts (word_source_id, sentence_id)
 		SELECT ?, ?
 		WHERE (SELECT COUNT(*) FROM word_contexts WHERE word_source_id = ?) < 5
 		ON CONFLICT DO NOTHING`,
-		wordSourceID, context, wordSourceID)
+		wordSourceID, nullableInt64(ctxID), wordSourceID)
 
 	return err
+}
+
+// nullableInt64 returns nil for 0 (meaning no sentence) else the value.
+func nullableInt64(v int64) interface{} {
+	if v == 0 {
+		return nil
+	}
+	return v
 }
 
 // UpdateWordDefinitions updates the definitions JSON for a given word.
